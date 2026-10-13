@@ -15,8 +15,11 @@ config :ai_in_practice, AiInPractice.Repo,
 # to bundle .js and .css sources.
 config :ai_in_practice, AiInPracticeWeb.Endpoint,
   # Dev only: bound to all interfaces so BrowserHost on bigwhite can reach it
-  # over Tailscale (http://dedev:4000). Production binds as runtime.exs says.
+  # over Tailscale (http://intra:4100). Production binds as runtime.exs says.
   http: [ip: {0, 0, 0, 0}],
+  # The host in link URLs from the admin pages and `mix links`: one the
+  # desktop can open. DEV_HOST overrides it.
+  url: [host: System.get_env("DEV_HOST", "intra")],
   check_origin: [
     "//localhost",
     "//127.0.0.1",
