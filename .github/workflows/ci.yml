@@ -6,6 +6,8 @@ name: ci
 on:
   push:
     branches: [main]
+    # Release tags run the gates too: cd.yml publishes a tag only once they pass.
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:

@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Post-deploy smoke check (PRD §10, §13.1). Run it against the live site
+# after every deploy; any FAIL means roll back (see the runbook).
+#
+#   script/smoke BASE_URL SHA [ADMIN_URL...]
+#
+#   script/smoke https://ai-in-practice.dsc.net 1a2b3c4d5e6f http://203.0.113.7:4001/admin
+#
+# Checks that the footer shows SHA; that assessment, recruiter and report
+# URLs are sent with Cache-Control: no-store and noindex; that a CSP is set;
+# that no page carries a third-party or injected script (Cloudflare's
+# beacon, Rocket Loader, email obfuscation); that the LiveView websocket
+# handshake succeeds from the site's own origin and is refused from another;
+# that /admin is a 404 on the public site; and that each ADMIN_URL (the admin
+# port on the server's public address) cannot be reached at all.
+set -uo pipefail
+
+if [ $# -lt 2 ]; then
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  exit 64
+fi
+
+base="${1%/}"
+sha="$(printf '%s' "$2" | tr 'A-F' 'a-f' | cut -c1-12)"
+shift 2
+admin_urls=("$@")
+
+# A well-formed token that matches no link. It is redacted from the logs
+# like any other.
+token="smoke-check-0000000000000000"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+failures=0
+
+ok() { printf 'ok    %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
+
+# fetch NAME PATH: headers to $work/NAME.h, body to $work/NAME.b, status out.
+fetch() {
+  curl -s --max-time 15 -D "$work/$1.h" -o "$work/$1.b" -w '%{http_code}' "$base$2"
+}
+
+header() { grep -i "^$2:" "$work/$1.h" | head -1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//'; }
+
+status="$(fetch home /)"
+if [ "$status" = 200 ]; then ok "home page is 200"; else fail "home page is $status"; fi
+
+if grep -q "code $sha" "$work/home.b"; then
+  ok "footer shows code $sha"
+else
+  fail "footer does not show code $sha (it shows: $(grep -o 'code [0-9a-z]*' "$work/home.b" | head -1))"
+fi
+
+fetch assessment "/a/$token" >/dev/null
+fetch recruiter "/r/$token" >/dev/null
+fetch download "/reports/$token/candidate" >/dev/null
+
+for page in home assessment; do
+  csp="$(header "$page" content-security-policy)"
+  if [[ "$csp" == *"default-src 'self'"* && "$csp" == *"script-src 'self'"* ]]; then
+    ok "$page has a same-origin CSP"
+  else
+    fail "$page has no same-origin CSP"
+  fi
+done
+
+for page in assessment recruiter download; do
+  cache="$(header "$page" cache-control)"
+  robots="$(header "$page" x-robots-tag)"
+  if [[ "$cache" == *no-store* ]]; then ok "$page is no-store"; else fail "$page Cache-Control is '$cache'"; fi
+  if [[ "$robots" == *noindex* ]]; then ok "$page is noindex"; else fail "$page X-Robots-Tag is '$robots'"; fi
+done
+
+for page in home assessment recruiter; do
+  body="$work/$page.b"
+  if grep -Eiq 'cdn-cgi|cloudflareinsights|rocket-loader|data-cfasync|__cf_email__|[0-9a-f]+-text/javascript' "$body"; then
+    fail "$page has a Cloudflare-injected script or rewrite"
+  elif grep -Eio '<script[^>]*>' "$body" | grep -Eiv "src=\"/[^/]" | grep -q .; then
+    fail "$page has a script that is inline or not same-origin: $(grep -Eio '<script[^>]*>' "$body" | grep -Eiv 'src="/[^/]' | head -1)"
+  else
+    ok "$page has only same-origin scripts"
+  fi
+done
+
+# A websocket upgrade: 101 from the site's own origin, refused from another.
+# curl waits on the open socket until --max-time (SMOKE_WS_WAIT seconds,
+# default 3), then prints the status.
+upgrade() {
+  curl -s --http1.1 --max-time "${SMOKE_WS_WAIT:-3}" -o /dev/null -w '%{http_code}' \
+    -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+    -H 'Sec-WebSocket-Key: c21va2UtY2hlY2sta2V5MA==' -H "Origin: $1" \
+    "$base/live/websocket?vsn=2.0.0"
+}
+
+own="$(upgrade "$base")"
+if [ "$own" = 101 ]; then ok "LiveView websocket handshake from $base"; else fail "LiveView websocket handshake is $own, not 101"; fi
+other="$(upgrade "https://smoke-check.invalid")"
+if [ "$other" != 101 ]; then ok "websocket from another origin refused ($other)"; else fail "websocket from another origin was accepted"; fi
+
+admin="$(fetch admin /admin)"
+if [ "$admin" = 404 ]; then ok "/admin is 404 on the public site"; else fail "/admin is $admin on the public site"; fi
+
+for url in "${admin_urls[@]}"; do
+  code="$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$url")"
+  if [ "$code" = 000 ]; then ok "admin unreachable at $url"; else fail "admin answered $code at $url"; fi
+done
+
+if [ "$failures" -gt 0 ]; then
+  printf '\n%d check(s) failed\n' "$failures"
+  exit 1
+fi
+printf '\nall checks passed\n'

@@ -1,0 +1,63 @@
+# CD: publish the release image, only after every CI gate has passed.
+#
+# Runs when the ci workflow finishes. It publishes only when that run
+# succeeded and was a push to main or of a v* tag, so an image in GHCR has
+# always passed CI (pull requests and red runs are skipped):
+#
+#   ghcr.io/dadamsuk/ai-in-practice:<full sha>   every green push
+#   ghcr.io/dadamsuk/ai-in-practice:main         green main
+#   ghcr.io/dadamsuk/ai-in-practice:<version>    a v* tag (v1.2.0 -> 1.2.0), plus a GitHub release
+#
+# Deploying is done by hand on the server, by SHA tag (see the hosting and
+# runbook wiki pages), followed by script/smoke.
+name: cd
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish image
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/dadamsuk/ai-in-practice
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      REF: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build the release image
+        run: docker build --build-arg GIT_SHA="$SHA" -t "$IMAGE:$SHA" .
+      - name: Push the SHA tag
+        run: docker push "$IMAGE:$SHA"
+      - name: Push main
+        if: env.REF == 'main'
+        run: |
+          docker tag "$IMAGE:$SHA" "$IMAGE:main"
+          docker push "$IMAGE:main"
+      - name: Push the version and make a GitHub release
+        if: startsWith(env.REF, 'v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${REF#v}"
+          docker tag "$IMAGE:$SHA" "$IMAGE:$version"
+          docker push "$IMAGE:$version"
+          gh release create "$REF" --verify-tag --generate-notes \
+            --notes "Image: \`$IMAGE:$version\` (\`$IMAGE:$SHA\`)"

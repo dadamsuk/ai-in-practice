@@ -163,6 +163,21 @@ Every push and pull request to `main` runs [`.github/workflows/ci.yml`](.github/
 
 `mix ci` runs the same gates locally. Dependabot watches mix and GitHub Actions.
 
+## Releases and deploys
+
+[`.github/workflows/cd.yml`](.github/workflows/cd.yml) publishes the release image to GHCR only after every CI gate has passed on a push to `main` or of a `v*` tag. Pull requests and red runs publish nothing.
+
+- `ghcr.io/dadamsuk/ai-in-practice:<full sha>` for every green push, and `:main` for green `main`
+- `:<version>` for a tag (`v1.2.0` publishes `1.2.0`), with a GitHub release
+
+Deploy by SHA tag, then run the post-deploy check against the live site:
+
+```sh
+script/smoke https://ai-in-practice.dsc.net <sha> http://<server public IP>:4001/admin
+```
+
+It checks that the footer shows that SHA; that assessment, recruiter and report URLs are `no-store` and `noindex`; that a same-origin CSP is set; that no page carries a third-party or Cloudflare-injected script; that the LiveView websocket upgrades from the site's own origin and is refused from another; that `/admin` is a 404 on the public site; and that each admin URL given cannot be reached. Any `FAIL` means roll back to the previous SHA tag.
+
 ## Browser checks
 
 Every screen change is walked in a real browser before it is done, using BrowserHost on David's desktop. See [`CLAUDE.md`](CLAUDE.md) and `script/browser-check`.
