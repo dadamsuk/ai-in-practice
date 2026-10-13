@@ -375,6 +375,97 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
     end
   end
 
+  describe "a busy model" do
+    test "mid-conversation, the answer comes back into the box to send again", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+
+      use_script(
+        [LLMScript.turn("Q1")] ++
+          List.duplicate({:error, :transient}, 3) ++ [LLMScript.turn("Q2")]
+      )
+
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "We cut invoice errors by a third.")
+      await(view, "#answer-error")
+
+      assert view |> element("#answer-error") |> render() =~ "could not be sent just now"
+      assert view |> element("#question") |> render() =~ "Q1"
+
+      assert view |> element("textarea[name=answer]") |> render() =~
+               "We cut invoice errors by a third."
+
+      refute has_element?(view, "#failed")
+
+      answer(view, "We cut invoice errors by a third.")
+      await(view, "#question[data-number='2']")
+      refute has_element?(view, "#answer-error")
+      assert view |> element("textarea[name=answer]") |> render() |> node_text() == ""
+    end
+
+    test "the answer given back survives a reconnect", %{conn: conn, recruiter: recruiter} do
+      {_link, token} = candidate(recruiter)
+      use_limits(%{reattach_ms: 2000})
+      use_script([LLMScript.turn("Q1")] ++ List.duplicate({:error, :transient}, 3))
+
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "Held across a reconnect.")
+      await(view, "#answer-error")
+      id = session_id(view)
+
+      # A new view attaches to the same session, as after a dropped connection.
+      {:ok, view2, _} =
+        conn
+        |> put_connect_params(%{"attach" => id})
+        |> live_isolated(AiInPracticeWeb.AssessmentLive, session: %{"token" => token})
+
+      await(view2, "#answer-error")
+      assert view2 |> element("textarea[name=answer]") |> render() =~ "Held across a reconnect."
+    end
+
+    test "while writing the reports, it offers to try again and nothing is lost", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {link, token} = candidate(recruiter)
+
+      use_script(
+        [LLMScript.turn("Q1"), LLMScript.turn("", [], close: true)] ++
+          List.duplicate({:error, :transient}, 3)
+      )
+
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "The only answer.")
+      await(view, "#report-not-written")
+
+      html = view |> element("#report-not-written") |> render()
+      assert html =~ "not written yet"
+      assert html =~ "nothing is lost"
+      refute html =~ ~r/fail|score|test/i
+      assert link_status(link) == :started
+
+      view |> element("#retry-report") |> render_click()
+      await(view, "#candidate-report")
+      assert render(view) =~ "The only answer."
+      assert link_status(link) == :completed
+    end
+
+    test "a fatal failure mid-conversation still ends it", %{conn: conn, recruiter: recruiter} do
+      {_link, token} = candidate(recruiter)
+      use_script([LLMScript.turn("Q1"), {:error, :fatal}])
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "One.")
+      await(view, "#failed")
+      assert render(view) =~ "the conversation has stopped"
+    end
+  end
+
   describe "quick sessions" do
     defp quick_link do
       {:ok, link, token} = Links.create_individual_link(%{label: "IND-Q", quick: true})

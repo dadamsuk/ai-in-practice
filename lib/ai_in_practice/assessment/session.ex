@@ -26,6 +26,14 @@ defmodule AiInPractice.Assessment.Session do
       written. `reason` is `:covered`, `:finished_early`, `:max_questions`,
       `:max_turns`, `:max_tokens` or `:time_limit`.
     * `{:report, report}`: the validated `AiInPractice.Assessment.Report`.
+    * `{:answer_not_sent, %{question: _, answer: _}}`: the turn after an
+      answer could not be had from the model (`:rate_limited` or
+      `:transient`, after `AiInPractice.LLM`'s retries). The answer has been
+      taken back out of the transcript and the session is waiting for it
+      again, on the same question. Nothing else is lost.
+    * `{:report_not_written, class}`: the report could not be had from the
+      model, for the same reasons. The answers are still held, for
+      `:report_ttl_ms`; `retry_report/1` tries again.
     * `{:failed, reason}`: the session has stopped. `reason` is an
       `AiInPractice.LLM` error class, `:report_invalid`, or `:no_answers`
       (finished before answering anything).
@@ -89,6 +97,7 @@ defmodule AiInPractice.Assessment.Session do
     :report,
     :question,
     :orphaned_timer,
+    :give_up_timer,
     meta: %{},
     status: :asking,
     transcript: %Transcript{},
@@ -154,6 +163,13 @@ defmodule AiInPractice.Assessment.Session do
   @spec finish_early(String.t()) :: :ok | {:error, :not_running | :not_found}
   def finish_early(id), do: call(id, :finish_early)
 
+  @doc """
+  Asks the model for the report again, after `{:report_not_written, _}`.
+  `{:error, :not_waiting}` at any other time.
+  """
+  @spec retry_report(String.t()) :: :ok | {:error, :not_waiting | :not_found}
+  def retry_report(id), do: call(id, :retry_report)
+
   @doc "The report, once written."
   @spec report(String.t()) :: {:ok, Report.t()} | {:error, :not_ready | :not_found}
   def report(id), do: call(id, :report)
@@ -172,12 +188,21 @@ defmodule AiInPractice.Assessment.Session do
   session has gone, `{:error, :not_found}`.
 
   Returns where the session stands: `status` (`:asking` while the next
-  question is written, `:awaiting_answer`, `:generating` or `:done`), the
-  question on screen (the map sent with `{:question, _}`, or nil), the
+  question is written, `:awaiting_answer`, `:generating`,
+  `:report_not_written` or `:done`), the question on screen (the map sent
+  with `{:question, _}`, or nil), an answer given back with
+  `{:answer_not_sent, _}` and not yet sent again (`unsent`, or nil), the
   report once written, and the meta.
   """
   @spec attach(String.t(), (map() -> boolean()), pid()) ::
-          {:ok, %{status: atom(), question: map() | nil, report: Report.t() | nil, meta: map()}}
+          {:ok,
+           %{
+             status: atom(),
+             question: map() | nil,
+             unsent: String.t() | nil,
+             report: Report.t() | nil,
+             meta: map()
+           }}
           | {:error, :not_found}
   def attach(id, check, owner \\ self()) when is_function(check, 1),
     do: call(id, {:attach, check, owner})
@@ -275,6 +300,13 @@ defmodule AiInPractice.Assessment.Session do
 
   def handle_call(:finish_early, _from, state), do: {:reply, {:error, :not_running}, state}
 
+  def handle_call(:retry_report, _from, %{status: :report_not_written} = state) do
+    Process.cancel_timer(state.give_up_timer)
+    {:reply, :ok, write_report(%{state | give_up_timer: nil})}
+  end
+
+  def handle_call(:retry_report, _from, state), do: {:reply, {:error, :not_waiting}, state}
+
   def handle_call(:report, _from, %{status: :done, report: report} = state),
     do: {:reply, {:ok, report}, state}
 
@@ -293,6 +325,7 @@ defmodule AiInPractice.Assessment.Session do
       view = %{
         status: state.status,
         question: state.question,
+        unsent: Transcript.unsent(state.transcript),
         report: state.report,
         meta: state.meta
       }
@@ -343,6 +376,9 @@ defmodule AiInPractice.Assessment.Session do
       when status in [:asking, :awaiting_answer] do
     close(state, :time_limit)
   end
+
+  # The report could not be written and nobody asked again in time.
+  def handle_info(:give_up, %{status: :report_not_written} = state), do: fail(state, :transient)
 
   def handle_info(:expire, state) do
     notify(state, :expired)
@@ -395,6 +431,23 @@ defmodule AiInPractice.Assessment.Session do
 
       :error ->
         fail(state, :fatal)
+    end
+  end
+
+  # A busy or briefly failing model, after LLM.complete's retries: give
+  # the answer back so the person can send it again. Nothing else is lost.
+  # Before any answer (the first question) there is nothing to keep, and the
+  # link is not yet used, so the session stops as before.
+  defp handle_turn({:error, class}, state) when class in [:rate_limited, :transient] do
+    case Transcript.unanswer(state.transcript) do
+      {:ok, answer, transcript} ->
+        Logger.warning("assessment turn not sent: #{class}, answer returned")
+        notify(state, {:answer_not_sent, %{question: state.question, answer: answer}})
+
+        {:noreply, %{state | transcript: transcript, status: :awaiting_answer, turn_attempts: 0}}
+
+      :error ->
+        fail(state, class)
     end
   end
 
@@ -469,16 +522,17 @@ defmodule AiInPractice.Assessment.Session do
       fail(state, :no_answers)
     else
       notify(state, {:closed, reason})
-      %{role_group: group, client: client, reading: reading} = state
-
-      # The reading list is read in the task, so a database failure is
-      # caught like any other and reported to the owner.
-      state =
-        %{state | transcript: transcript, status: :generating, question: nil}
-        |> start_task(fn -> Report.generate(group, transcript, reading(reading), client) end)
-
-      {:noreply, state}
+      {:noreply, write_report(%{state | transcript: transcript, question: nil})}
     end
+  end
+
+  # The reading list is read in the task, so a database failure is caught
+  # like any other and reported to the owner.
+  defp write_report(state) do
+    %{role_group: group, client: client, reading: reading, transcript: transcript} = state
+
+    %{state | status: :generating}
+    |> start_task(fn -> Report.generate(group, transcript, reading(reading), client) end)
   end
 
   defp reading(fun) when is_function(fun, 0), do: fun.()
@@ -488,6 +542,15 @@ defmodule AiInPractice.Assessment.Session do
     notify(state, {:report, report})
     Process.send_after(self(), :expire, state.limits.report_ttl_ms)
     {:noreply, %{state | status: :done, report: report, transcript: %Transcript{}}}
+  end
+
+  # As for a turn: keep the answers, and let the person ask again, for as
+  # long as a report would have been kept.
+  defp handle_report({:error, class}, state) when class in [:rate_limited, :transient] do
+    Logger.warning("assessment report not written: #{class}, waiting to try again")
+    notify(state, {:report_not_written, class})
+    timer = Process.send_after(self(), :give_up, state.limits.report_ttl_ms)
+    {:noreply, %{state | status: :report_not_written, give_up_timer: timer}}
   end
 
   defp handle_report({:error, reason}, state), do: fail(state, reason)

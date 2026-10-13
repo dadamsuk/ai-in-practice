@@ -32,6 +32,28 @@ defmodule AiInPractice.Assessment.SessionPrivacyTest do
     assert status =~ "transcript: :redacted"
   end
 
+  test "an answer given back after a busy model is held without words in the state or the log" do
+    log =
+      GlobalLog.capture(fn ->
+        {id, _} =
+          answered_session(
+            "UNSENT-MARKER we cut invoice errors",
+            [LLMScript.turn("Q1")] ++ List.duplicate({:error, :transient}, 3)
+          )
+
+        assert_event(id, {:answer_not_sent, %{answer: "UNSENT-MARKER" <> _}})
+
+        pid = Session.whereis(id)
+        refute inspect(:sys.get_state(pid), limit: :infinity) =~ "UNSENT-MARKER"
+        refute inspect(:sys.get_status(pid), limit: :infinity) =~ "UNSENT-MARKER"
+        Assessment.stop(id)
+      end)
+
+    assert log =~ "assessment turn not sent: transient, answer returned"
+    refute log =~ "UNSENT-MARKER"
+    refute log =~ "invoice"
+  end
+
   test "the raw state inspects without words" do
     {id, _} = answered_session("STATE-MARKER we cut invoice errors")
     assert_event(id, {:question, %{text: "Q2"}})

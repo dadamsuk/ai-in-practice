@@ -8,11 +8,11 @@ defmodule AiInPractice.Assessment.Transcript do
   shows no words.
   """
 
-  defstruct turns: []
+  defstruct turns: [], unsent: nil
 
   @type kind :: :main | :follow_up
   @type turn :: %{question: String.t(), kind: kind(), answer: String.t() | nil}
-  @type t :: %__MODULE__{turns: [turn()]}
+  @type t :: %__MODULE__{turns: [turn()], unsent: String.t() | nil}
 
   @tags ~w(transcript question answer state reading)
 
@@ -26,8 +26,29 @@ defmodule AiInPractice.Assessment.Transcript do
   @spec answer(t(), String.t()) :: t()
   def answer(%__MODULE__{turns: turns} = transcript, answer) do
     {last, rest} = List.pop_at(turns, -1)
-    %{transcript | turns: rest ++ [%{last | answer: answer}]}
+    %{transcript | turns: rest ++ [%{last | answer: answer}], unsent: nil}
   end
+
+  @doc """
+  Takes the answer to the last question back out, so the question can be
+  answered again (its turn could not be sent). Returns the answer and the
+  transcript, which holds it as `unsent/1` until the next `answer/2`, or
+  `:error` when the last question has no answer.
+  """
+  @spec unanswer(t()) :: {:ok, String.t(), t()} | :error
+  def unanswer(%__MODULE__{turns: turns} = transcript) do
+    case List.pop_at(turns, -1) do
+      {%{answer: answer} = last, rest} when is_binary(answer) ->
+        {:ok, answer, %{transcript | turns: rest ++ [%{last | answer: nil}], unsent: answer}}
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc "The answer taken back by `unanswer/1` and not yet sent again, or nil."
+  @spec unsent(t()) :: String.t() | nil
+  def unsent(%__MODULE__{unsent: unsent}), do: unsent
 
   @doc "The turns that have an answer, dropping a last unanswered question."
   @spec answered(t()) :: t()

@@ -54,6 +54,7 @@ Set `FAKE_LLM=1` to run the dev server on the fake model (development only). To 
 - `spend_refused`: refused before the first question (the "not available just now" screen; the link stays unused)
 - `fail_mid`: fails after two questions
 - `report_invalid`: the reports cannot be written
+- `flaky`: the model is busy for the third question and for the reports, so the answer comes back to send again and the reports offer "Try again"
 - `short`: a normal run with a one-minute hard stop
 
 Set `FAKE_TRANSCRIBER=1` to offer voice in development with a fake transcriber, which turns every recording into the same sentence. `no_speech` and `unavailable` fail every recording in those ways, and `down` keeps voice off. To use the real engine instead, set `TRANSCRIPTION_SERVICE_URL` and `TRANSCRIPTION_SERVICE_KEY`. The microphone needs a secure context, which `http://100.88.155.65:4100` is not, so in BrowserHost give the page a synthetic microphone with `script/browser-check eval` (a WebAudio stream in place of `navigator.mediaDevices.getUserMedia`).

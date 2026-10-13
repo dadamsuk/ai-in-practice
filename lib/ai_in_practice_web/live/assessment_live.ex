@@ -127,6 +127,13 @@ defmodule AiInPracticeWeb.AssessmentLive do
   defp resume(socket, %{status: :done, report: report}), do: show_reports(socket, report)
   defp resume(socket, %{status: :generating}), do: assign(socket, phase: :generating)
 
+  defp resume(socket, %{status: :report_not_written}),
+    do: assign(socket, phase: :report_not_written, question: nil)
+
+  defp resume(socket, %{status: :awaiting_answer, question: question, unsent: unsent})
+       when is_binary(unsent),
+       do: answer_not_sent(socket, question, unsent)
+
   defp resume(socket, %{status: :awaiting_answer, question: question}),
     do: assign(socket, phase: :question, question: question)
 
@@ -225,6 +232,14 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
       nil ->
         {:noreply, socket}
+    end
+  end
+
+  def handle_event("retry_report", _params, %{assigns: %{phase: :report_not_written}} = socket) do
+    case Assessment.retry_report(socket.assigns.session_id) do
+      :ok -> {:noreply, assign(socket, phase: :generating)}
+      {:error, :not_waiting} -> {:noreply, socket}
+      {:error, :not_found} -> {:noreply, failed(socket, :fatal)}
     end
   end
 
@@ -409,6 +424,12 @@ defmodule AiInPracticeWeb.AssessmentLive do
     show_reports(socket, report)
   end
 
+  defp on_event({:answer_not_sent, %{question: question, answer: answer}}, socket),
+    do: answer_not_sent(socket, question, answer)
+
+  defp on_event({:report_not_written, _class}, socket),
+    do: assign(socket, phase: :report_not_written, question: nil)
+
   defp on_event({:failed, reason}, socket), do: failed(socket, reason)
 
   defp on_event(:expired, socket),
@@ -439,6 +460,19 @@ defmodule AiInPracticeWeb.AssessmentLive do
     )
   end
 
+  # The model was busy: the answer is back in the box, to send again.
+  defp answer_not_sent(socket, question, answer) do
+    assign(socket,
+      phase: :question,
+      question: question,
+      answer: answer,
+      answer_error:
+        "Your answer could not be sent just now. It is still here: please send it again in a moment.",
+      voice: :idle,
+      voice_error: nil
+    )
+  end
+
   defp failed(socket, reason) do
     if id = socket.assigns.session_id, do: Assessment.stop(id)
     assign(socket, phase: :failed, reason: reason, question: nil, report: nil)
@@ -446,7 +480,11 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   # Enum.member?/2 rather than `in`, which :cover cannot compile here.
   defp live_phase?(phase),
-    do: Enum.member?([:opening, :question, :thinking, :generating, :reports], phase)
+    do:
+      Enum.member?(
+        [:opening, :question, :thinking, :generating, :report_not_written, :reports],
+        phase
+      )
 
   defp ended_phase?(phase), do: Enum.member?([:failed, :expired, :dead_end], phase)
 
@@ -694,6 +732,23 @@ defmodule AiInPracticeWeb.AssessmentLive do
         }
       }
     </script>
+    """
+  end
+
+  defp phase(%{phase: :report_not_written} = assigns) do
+    ~H"""
+    <div id="report-not-written">
+      <h1>Your reports are not written yet</h1>
+      <p class="lede">
+        The service that writes them is busy just now. Your answers are still held here, so nothing is lost.
+      </p>
+      <p>
+        Please keep this page open, wait a minute, and try again. Your answers are kept for an hour at most, and only while this page is open.
+      </p>
+      <.button variant="primary" type="button" id="retry-report" phx-click="retry_report">
+        Try again
+      </.button>
+    </div>
     """
   end
 

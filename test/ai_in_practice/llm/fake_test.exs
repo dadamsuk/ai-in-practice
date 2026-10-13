@@ -31,6 +31,40 @@ defmodule AiInPractice.LLM.FakeTest do
     refute Map.has_key?(data, "areas")
   end
 
+  test ":flaky fails the nth turn and the report for their first tries, per answer" do
+    answered = fn asked, answer ->
+      questions =
+        Enum.map_join(1..asked//1, "\n", fn n -> ~s(<question n="#{n}">Q</question>) end)
+
+      text = questions <> "\n<answer>\n#{answer}\n</answer>"
+      %{purpose: :turn, messages: [%{role: "user", content: text}]}
+    end
+
+    marker = "flaky-#{System.unique_integer([:positive])}"
+    opts = [flaky: {2, :rate_limited, 2}]
+
+    # Other turns are never affected.
+    assert {:ok, _} = Fake.request(turn(1), opts)
+    assert {:ok, _} = Fake.request(answered.(3, marker), opts)
+
+    # The nth: two failures, then through.
+    assert {:error, :rate_limited} = Fake.request(answered.(2, marker), opts)
+    assert {:error, :rate_limited} = Fake.request(answered.(2, marker), opts)
+    assert {:ok, %{data: %{"question" => _}}} = Fake.request(answered.(2, marker), opts)
+
+    # A different answer is a different try.
+    assert {:error, :rate_limited} = Fake.request(answered.(2, marker <> "-b"), opts)
+
+    report = %{
+      purpose: :report,
+      messages: [%{role: "user", content: "<answer>\n#{marker}\n</answer>"}]
+    }
+
+    assert {:error, :rate_limited} = Fake.request(report, opts)
+    assert {:error, :rate_limited} = Fake.request(report, opts)
+    assert {:ok, %{data: %{"areas" => _}}} = Fake.request(report, opts)
+  end
+
   test "the FAKE_LLM modes" do
     modes = Fake.modes()
     assert modes["1"] == []
@@ -38,6 +72,7 @@ defmodule AiInPractice.LLM.FakeTest do
     assert modes["fail_mid"] == [fail_turn: {2, :fatal}]
     assert modes["report_invalid"] == [fail_report: :report_invalid]
     assert modes["short"] == []
+    assert modes["flaky"] == [flaky: {2, :transient, 3}]
     refute Map.has_key?(modes, "0")
   end
 end

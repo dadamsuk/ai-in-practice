@@ -336,12 +336,152 @@ defmodule AiInPractice.Assessment.SessionTest do
       assert LLMScript.calls(agent) == 1
     end
 
-    test "a failure mid-conversation ends the session" do
-      # LLM.complete retries a rate limit three times before giving up.
-      {id, _} = start!([LLMScript.turn("Q1") | List.duplicate({:error, :rate_limited}, 4)])
+    test "a fatal or spend failure mid-conversation still ends the session" do
+      for class <- [:fatal, :spend_refused] do
+        {id, _} = start!([LLMScript.turn("Q1"), {:error, class}])
+        assert_event(id, {:question, _})
+        capture_log(fn -> :ok = Assessment.answer(id, "One.") end)
+        assert_event(id, {:failed, ^class})
+        refute_event(id, {:answer_not_sent, _})
+        assert gone?(id)
+      end
+    end
+
+    test "a busy model mid-conversation gives the answer back, and sending it again carries on" do
+      # Rate limits are retried three times, transient failures twice, by LLM.complete.
+      for {class, tries} <- [rate_limited: 4, transient: 3] do
+        script =
+          [LLMScript.turn("Q1"), LLMScript.turn("Q2")]
+          |> List.insert_at(1, List.duplicate({:error, class}, tries))
+          |> List.flatten()
+
+        {id, agent} = start!(script)
+        assert_event(id, {:question, %{text: "Q1", number: 1}})
+        capture_log(fn -> :ok = Assessment.answer(id, "First go.") end)
+
+        assert_event(
+          id,
+          {:answer_not_sent, %{question: %{text: "Q1", number: 1}, answer: "First go."}}
+        )
+
+        assert is_pid(Session.whereis(id))
+        assert {:error, :not_ready} = Assessment.report(id)
+
+        # Waiting for the same question again, with the answer held for a reconnect.
+        assert {:ok, %{status: :awaiting_answer, question: %{text: "Q1"}, unsent: "First go."}} =
+                 Session.attach(id, fn _ -> true end)
+
+        :ok = Assessment.answer(id, "Second go.")
+        assert_event(id, {:question, %{text: "Q2", number: 2}})
+
+        # The transcript holds the second answer only.
+        last = agent |> LLMScript.requests() |> List.last()
+        assert answer_count(last) == 1
+        assert List.last(last.messages).content =~ "Second go."
+        refute List.last(last.messages).content =~ "First go."
+
+        assert {:ok, %{unsent: nil}} = Session.attach(id, fn _ -> true end)
+        Assessment.stop(id)
+      end
+    end
+
+    test "a busy model can give the same answer back more than once" do
+      script =
+        [LLMScript.turn("Q1")] ++
+          List.duplicate({:error, :transient}, 6) ++ [LLMScript.turn("Q2")]
+
+      {id, _} = start!(script)
+      assert_event(id, {:question, %{text: "Q1"}})
+
+      for _ <- 1..2 do
+        capture_log(fn -> :ok = Assessment.answer(id, "Again.") end)
+        assert_event(id, {:answer_not_sent, %{answer: "Again."}})
+      end
+
+      :ok = Assessment.answer(id, "Again.")
+      assert_event(id, {:question, %{text: "Q2"}})
+    end
+
+    test "a busy model before the first question still ends the session: there is no answer to keep" do
+      {id, _} = start!(List.duplicate({:error, :rate_limited}, 4))
+      capture_log(fn -> assert_event(id, {:failed, :rate_limited}) end)
+      refute_event(id, {:answer_not_sent, _})
+      assert gone?(id)
+    end
+
+    test "a busy model while writing the report keeps the answers, and retry_report tries again" do
+      script =
+        [LLMScript.turn("Q1"), LLMScript.turn("", [], close: true)] ++
+          List.duplicate({:error, :transient}, 3)
+
+      {id, agent} = start!(script)
+      assert_event(id, {:question, _})
+      assert {:error, :not_waiting} = Assessment.retry_report(id)
+      capture_log(fn -> :ok = Assessment.answer(id, "Only answer.") end)
+      assert_event(id, {:closed, :covered})
+      capture_log(fn -> assert_event(id, {:report_not_written, :transient}) end)
+
+      assert is_pid(Session.whereis(id))
+      assert {:error, :not_ready} = Assessment.report(id)
+      assert {:ok, %{status: :report_not_written}} = Session.attach(id, fn _ -> true end)
+      # Not a conversation any more: no answers, no finishing early.
+      assert {:error, :not_waiting} = Assessment.answer(id, "More.")
+      assert {:error, :not_running} = Assessment.finish_early(id)
+
+      # The script is used up, so the next report call gets the default report.
+      assert :ok = Assessment.retry_report(id)
+      assert_event(id, {:report, %Report{}})
+      report_request = agent |> LLMScript.requests() |> List.last()
+      assert report_request.purpose == :report
+      assert List.last(report_request.messages).content =~ "Only answer."
+      assert {:error, :not_waiting} = Assessment.retry_report(id)
+    end
+
+    test "a report that is never asked for again is given up after its time to live" do
+      script =
+        [LLMScript.turn("Q1"), LLMScript.turn("", [], close: true)] ++
+          List.duplicate({:error, :rate_limited}, 4)
+
+      {id, _} = start!(script, limits: %{report_ttl_ms: 50})
       assert_event(id, {:question, _})
       capture_log(fn -> :ok = Assessment.answer(id, "One.") end)
-      assert_event(id, {:failed, :rate_limited})
+      capture_log(fn -> assert_event(id, {:report_not_written, :rate_limited}) end)
+      capture_log(fn -> assert_event(id, {:failed, :transient}) end)
+      assert gone?(id)
+    end
+
+    test "trying the report again restarts the give-up time" do
+      # Fails twice (three tries each), then the default report.
+      script =
+        [LLMScript.turn("Q1"), LLMScript.turn("", [], close: true)] ++
+          List.duplicate({:error, :transient}, 6)
+
+      {id, _} = start!(script, limits: %{report_ttl_ms: 600})
+      assert_event(id, {:question, _})
+      capture_log(fn -> :ok = Assessment.answer(id, "One.") end)
+      capture_log(fn -> assert_event(id, {:report_not_written, :transient}) end)
+
+      Process.sleep(400)
+      capture_log(fn -> :ok = Assessment.retry_report(id) end)
+      capture_log(fn -> assert_event(id, {:report_not_written, :transient}) end)
+
+      # Past the first give-up time, but not the second: still waiting.
+      Process.sleep(300)
+      assert is_pid(Session.whereis(id))
+      refute_event(id, {:failed, _})
+
+      :ok = Assessment.retry_report(id)
+      assert_event(id, {:report, %Report{}})
+    end
+
+    test "a fatal report failure still ends the session" do
+      {id, _} =
+        start!([LLMScript.turn("Q1"), LLMScript.turn("", [], close: true), {:error, :fatal}])
+
+      assert_event(id, {:question, _})
+      capture_log(fn -> :ok = Assessment.answer(id, "One.") end)
+      capture_log(fn -> assert_event(id, {:failed, :fatal}) end)
+      refute_event(id, {:report_not_written, _})
       assert gone?(id)
     end
 

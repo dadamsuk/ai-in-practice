@@ -19,6 +19,27 @@ defmodule AiInPractice.Assessment.TranscriptTest do
     assert [%{kind: :main}, %{kind: :follow_up}, %{answer: nil}] = t.turns
   end
 
+  test "unanswer/1 takes the last answer back and holds it until the next answer" do
+    t = %Transcript{} |> Transcript.ask("First?", :main) |> Transcript.answer("One")
+    assert Transcript.unsent(t) == nil
+
+    assert {:ok, "One", t} = Transcript.unanswer(t)
+    assert [%{question: "First?", answer: nil}] = t.turns
+    assert Transcript.unsent(t) == "One"
+    assert Transcript.answers(t) == []
+    assert t |> Transcript.answered() |> Transcript.size() == 0
+    refute inspect(t) =~ "One"
+
+    t = Transcript.answer(t, "One, again")
+    assert Transcript.unsent(t) == nil
+    assert Transcript.answers(t) == ["One, again"]
+  end
+
+  test "unanswer/1 has nothing to take back before an answer" do
+    assert :error = Transcript.unanswer(%Transcript{})
+    assert :error = Transcript.unanswer(transcript())
+  end
+
   test "answered/1 drops a last unanswered question" do
     assert transcript() |> Transcript.answered() |> Transcript.size() == 2
   end

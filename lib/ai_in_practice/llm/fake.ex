@@ -14,6 +14,12 @@ defmodule AiInPractice.LLM.Fake do
   To walk the error screens, `:fail_turn` (`{n, class}`) fails every turn
   once `n` questions have been asked (`{0, class}`: before the first), and
   `:fail_report` (a class, or `:report_invalid`) fails the report call.
+  `:flaky` (`{n, class, attempts}`) fails the turn once `n` questions have
+  been asked, and the report, for their first `attempts` tries, then lets
+  them through: with `attempts` above `AiInPractice.LLM`'s retries, the
+  person sees the answer or the report come back unsent, and sending again
+  works. The tries are counted per request and answer, in
+  `:persistent_term`, so this is for development only.
   `modes/0` names the combinations `FAKE_LLM` selects.
   """
 
@@ -38,13 +44,15 @@ defmodule AiInPractice.LLM.Fake do
     "spend_refused" => [fail_turn: {0, :spend_refused}],
     "fail_mid" => [fail_turn: {2, :fatal}],
     "report_invalid" => [fail_report: :report_invalid],
+    "flaky" => [flaky: {2, :transient, 3}],
     "short" => []
   }
 
   @doc """
   The `FAKE_LLM` values (dev only): `1` (a normal run), `spend_refused`
   (refused before the first question), `fail_mid` (fails after two
-  questions), `report_invalid` (the report cannot be written) and `short`
+  questions), `report_invalid` (the report cannot be written), `flaky` (the
+  third question and the report come back unsent once each) and `short`
   (a normal run; `config/runtime.exs` also sets a one-minute hard stop).
   """
   @spec modes() :: %{String.t() => keyword()}
@@ -62,19 +70,49 @@ defmodule AiInPractice.LLM.Fake do
     asked = request |> user_text() |> count(~r/<question /)
     limit = Keyword.get(opts, :questions, 5)
 
-    case Keyword.get(opts, :fail_turn) do
-      {n, class} when asked >= n -> {:error, class}
-      _ -> ok(turn_data(asked, limit))
+    case {Keyword.get(opts, :fail_turn), Keyword.get(opts, :flaky)} do
+      {{n, class}, _} when asked >= n ->
+        {:error, class}
+
+      {_, {^asked, class, attempts}} ->
+        flaky(request, class, attempts, fn -> ok(turn_data(asked, limit)) end)
+
+      _ ->
+        ok(turn_data(asked, limit))
     end
   end
 
   defp default(%{purpose: :report} = request, opts) do
-    case Keyword.get(opts, :fail_report) do
-      nil -> ok(report_data(request))
+    case {Keyword.get(opts, :fail_report), Keyword.get(opts, :flaky)} do
       # Missing every section, so it is rejected twice, as a real one would be.
-      :report_invalid -> ok(%{"summary" => "Nothing else."})
-      class -> {:error, class}
+      {:report_invalid, _} ->
+        ok(%{"summary" => "Nothing else."})
+
+      {nil, {_n, class, attempts}} ->
+        flaky(request, class, attempts, fn -> ok(report_data(request)) end)
+
+      {nil, nil} ->
+        ok(report_data(request))
+
+      {class, _} ->
+        {:error, class}
     end
+  end
+
+  # Fails the first `attempts` tries of this request, then answers. A try
+  # is the same purpose and the same last answer.
+  defp flaky(request, class, attempts, answer) do
+    key = {__MODULE__, :flaky, request.purpose, :erlang.phash2(last_answer(request))}
+    tries = :persistent_term.get(key, 0)
+    :persistent_term.put(key, tries + 1)
+    if tries < attempts, do: {:error, class}, else: answer.()
+  end
+
+  defp last_answer(request) do
+    request
+    |> user_text()
+    |> then(&Regex.scan(~r{<answer>\n(.*?)\n</answer>}s, &1))
+    |> List.last()
   end
 
   defp turn_data(asked, limit) when asked >= limit,
