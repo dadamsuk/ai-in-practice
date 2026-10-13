@@ -178,6 +178,8 @@ script/smoke https://ai-in-practice.dsc.net <sha> http://<server public IP>:4001
 
 It checks that the footer shows that SHA; that assessment, recruiter and report URLs are `no-store` and `noindex`; that a same-origin CSP is set; that no page carries a third-party or Cloudflare-injected script; that the LiveView websocket upgrades from the site's own origin and is refused from another; that `/admin` is a 404 on the public site; and that each admin URL given cannot be reached. Any `FAIL` means roll back to the previous SHA tag.
 
+How the server, Cloudflare and OpenRouter must be set up is on DSC's wiki: [hosting requirements (W-1665)](https://app.slipdock.us/boards/72/wiki/ai-in-practice-hosting-requirements). Deploys, rollback, the signing and OpenRouter keys, and backups are in the [runbook (W-1666)](https://app.slipdock.us/boards/72/wiki/ai-in-practice-runbook).
+
 ## Browser checks
 
 Every screen change is walked in a real browser before it is done, using BrowserHost on David's desktop. See [`CLAUDE.md`](CLAUDE.md) and `script/browser-check`.
