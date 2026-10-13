@@ -273,6 +273,49 @@ defmodule AiInPractice.Assessment.ReportTest do
       assert log =~ "missing at main_gap"
     end
 
+    @tag :privacy
+    test "the regeneration says which checks failed and where, never the rejected text" do
+      leaky = data(&Map.put(&1, "summary", "SECRET-MARKER They are Advanced."))
+
+      {client, agent} = LLMScript.client([{:ok, leaky}, {:ok, data()}])
+
+      capture_log(fn ->
+        assert {:ok, %Report{}} = Report.generate(:finance, transcript(), [], client)
+      end)
+
+      [first, second] = LLMScript.requests(agent)
+      assert length(second.messages) == length(first.messages)
+      assert hd(second.messages) == hd(first.messages)
+
+      original = List.last(first.messages).content
+      retry = List.last(second.messages).content
+      assert String.starts_with?(retry, original)
+
+      note = String.replace_prefix(retry, original, "")
+      assert note =~ "rejected by automatic checks"
+      assert note =~ "- summary: named an internal level or gave a score."
+      refute note =~ "SECRET-MARKER"
+    end
+
+    test "a missing section is named in the regeneration" do
+      {client, agent} =
+        LLMScript.client([{:ok, data(&Map.delete(&1, "main_gap"))}, {:ok, data()}])
+
+      capture_log(fn -> assert {:ok, _} = Report.generate(:finance, transcript(), [], client) end)
+
+      [_, second] = LLMScript.requests(agent)
+      assert List.last(second.messages).content =~ "- main_gap: missing or empty."
+    end
+
+    test "with_feedback/2 explains an unknown rule by name" do
+      request = %{purpose: :report, messages: [%{role: "user", content: "Q"}]}
+
+      assert %{messages: [%{role: "user", content: content}]} =
+               ReportPrompt.with_feedback(request, [{:odd, "x"}])
+
+      assert content =~ "- x: broke the rule odd."
+    end
+
     test "a leak followed by a clean report succeeds on the regeneration" do
       leaky = data(&Map.put(&1, "summary", "They are Advanced."))
       {client, agent} = LLMScript.client([{:ok, leaky}, {:ok, data()}])
@@ -306,6 +349,33 @@ defmodule AiInPractice.Assessment.ReportTest do
       {client, _agent} = LLMScript.client([{:ok, data(&Map.put(&1, "reading_picks", [7, 1]))}])
       assert {:ok, report} = Report.generate(:finance, transcript(), [item], client)
       assert report.reading_picks == [7]
+    end
+
+    @tag :privacy
+    test "each rejection emits telemetry with rule and path only" do
+      ref = make_ref()
+      parent = self()
+      leaky = data(&Map.put(&1, "summary", "SECRET-MARKER They are Advanced."))
+
+      {client, _agent} =
+        LLMScript.client([{:ok, leaky}, {:ok, data(&Map.delete(&1, "main_gap"))}])
+
+      :telemetry.attach(
+        ref,
+        [:ai_in_practice, :report, :rejected],
+        fn _event, measurements, metadata, _ -> send(parent, {ref, measurements, metadata}) end,
+        nil
+      )
+
+      try do
+        capture_log(fn -> Report.generate(:finance, transcript(), [], client) end)
+      after
+        :telemetry.detach(ref)
+      end
+
+      assert_received {^ref, %{count: 1}, %{problems: [{:level_or_score, "summary"}]} = first}
+      assert_received {^ref, %{count: 1}, %{problems: [{:missing, "main_gap"}]}}
+      refute inspect(first) =~ "SECRET-MARKER"
     end
 
     @tag :privacy

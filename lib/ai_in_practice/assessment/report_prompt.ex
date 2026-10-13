@@ -125,6 +125,34 @@ defmodule AiInPractice.Assessment.ReportPrompt do
     }
   end
 
+  @doc """
+  The request again, with a note of what the rejected draft got wrong:
+  each `{rule, path}` from `AiInPractice.Assessment.Report.validate/4`,
+  explained. It names fields, never the draft's text. Without it the
+  regeneration repeats the same request and can fail the same way (#714).
+  """
+  @spec with_feedback(AiInPractice.LLM.request(), [{atom(), String.t()}]) ::
+          AiInPractice.LLM.request()
+  def with_feedback(%{messages: messages} = request, problems) do
+    {before, [last]} = Enum.split(messages, -1)
+
+    note =
+      "\n\nA previous draft of this report was rejected by automatic checks:\n" <>
+        Enum.map_join(problems, "\n", &problem/1) <>
+        "\nWrite the whole report again, avoiding these problems."
+
+    %{request | messages: before ++ [%{last | content: last.content <> note}]}
+  end
+
+  defp problem({:missing, path}),
+    do: "- #{path}: missing or empty. Every section must be filled in."
+
+  defp problem({:level_or_score, path}),
+    do:
+      "- #{path}: named an internal level or gave a score. Describe the evidence in plain words; never mention levels, ratings or scores."
+
+  defp problem({rule, path}), do: "- #{path}: broke the rule #{rule}."
+
   @doc "The JSON schema covering every field in PRD §8.2."
   @spec schema() :: {String.t(), map()}
   def schema do

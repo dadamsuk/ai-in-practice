@@ -13,8 +13,11 @@ defmodule AiInPractice.Assessment.Report do
       the output;
     * a missing or empty section rejects the output.
 
-  Rejected output is regenerated once; a second rejection is
-  `{:error, :report_invalid}`, which the UI turns into an apology.
+  Rejected output is regenerated once, with the rules it broke and where
+  (never its text) added to the request; a second rejection is
+  `{:error, :report_invalid}`, which the UI turns into an apology. Each
+  rejection emits `[:ai_in_practice, :report, :rejected]` telemetry whose
+  metadata is the `{rule, path}` list only.
 
   `level` and `confidence` on each area are internal (rubric, "How the
   assessment is expressed") and must never be rendered.
@@ -80,16 +83,25 @@ defmodule AiInPractice.Assessment.Report do
       {:ok, report}
     else
       {:error, {:invalid, problems}} when attempts_left > 1 ->
+        rejected(problems)
         Logger.warning("report rejected (#{summarise(problems)}), regenerating once")
+        request = ReportPrompt.with_feedback(request, problems)
         attempt(request, group, transcript, reading_ids, client, attempts_left - 1)
 
       {:error, {:invalid, problems}} ->
+        rejected(problems)
         Logger.warning("report rejected again (#{summarise(problems)}), giving up")
         {:error, :report_invalid}
 
       {:error, class} ->
         {:error, class}
     end
+  end
+
+  # For the evaluation harness, which counts rejections by rule and path.
+  # Like the log line, it carries no text from the report.
+  defp rejected(problems) do
+    :telemetry.execute([:ai_in_practice, :report, :rejected], %{count: 1}, %{problems: problems})
   end
 
   # Field paths and rule names only: never the offending text.
