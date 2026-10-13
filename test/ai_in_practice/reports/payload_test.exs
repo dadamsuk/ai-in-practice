@@ -51,6 +51,24 @@ defmodule AiInPractice.Reports.PayloadTest do
     assert {:error, _} = Signing.verify(Jason.encode!(stripped), keyring)
   end
 
+  test "a quick session says so in the signed content; a full one has no session key" do
+    report = report_fixture()
+    full = Payload.assessor(report, meta_fixture())
+    quick = Payload.assessor(report, meta_fixture(%{quick: true}))
+
+    refute Map.has_key?(full, "session")
+    assert Payload.assessor(report, meta_fixture(%{quick: false})) == full
+    assert quick["session"] == Content.quick()
+    assert Map.delete(quick, "session") == full
+
+    {:ok, keyring} = Signing.parse(private_key: Signing.generate().private_key)
+    envelope = Signing.envelope(quick, keyring)
+    assert {:ok, %{"session" => _}} = Signing.verify(envelope, keyring)
+
+    stripped = envelope |> Jason.decode!() |> update_in(["payload"], &Map.delete(&1, "session"))
+    assert {:error, _} = Signing.verify(Jason.encode!(stripped), keyring)
+  end
+
   test "holds every assessor section, in the report's words" do
     report = report_fixture()
     payload = Payload.assessor(report, meta_fixture())

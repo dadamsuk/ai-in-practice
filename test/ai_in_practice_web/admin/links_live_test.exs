@@ -77,8 +77,38 @@ defmodule AiInPracticeWeb.Admin.LinksLiveTest do
     assert html =~ "Individual link IND-014"
 
     token = view |> text("#issued-url") |> String.split("/a/") |> List.last()
-    assert {:ok, %{kind: :individual, label: "IND-014"}} = Links.begin_session(token)
+
+    assert {:ok, %{kind: :individual, label: "IND-014", quick: false}} =
+             Links.begin_session(token)
+
     assert view |> element("#individual-usage [data-status]") |> render() =~ "unused"
+    assert view |> element("#individual-usage [data-length]") |> render() =~ "full"
+  end
+
+  test "issues a quick individual link", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/admin")
+
+    html =
+      view
+      |> form("#individual-form", individual: %{label: "IND-Q1", quick: "true"})
+      |> render_submit()
+
+    assert html =~ "Individual link IND-Q1 (quick)"
+    token = view |> text("#issued-url") |> String.split("/a/") |> List.last()
+    assert {:ok, %{label: "IND-Q1", quick: true}} = Links.begin_session(token)
+    assert view |> element("#individual-usage [data-length]") |> render() =~ "quick"
+    # The form is reset: the next link is full-length unless ticked again.
+    refute view |> element("#individual-form input[type=checkbox][checked]") |> has_element?()
+  end
+
+  test "a quick link still needs a label", %{conn: conn} do
+    {:ok, view, _} = live(conn, "/admin")
+
+    html =
+      view |> form("#individual-form", individual: %{label: "", quick: "true"}) |> render_submit()
+
+    assert html =~ "can&#39;t be blank"
+    assert Links.list_individual_links() == []
   end
 
   test "an individual link needs a label", %{conn: conn} do

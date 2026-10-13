@@ -108,6 +108,35 @@ defmodule AiInPractice.Links.SchemaTest do
     end
   end
 
+  describe "quick links" do
+    test "an individual link is full-length by default and may be made quick" do
+      assert {:ok, link, _} = Links.create_individual_link(%{label: "IND-1"})
+      assert Repo.get!(AssessmentLink, link.id).quick == false
+
+      assert {:ok, link, _} = Links.create_individual_link(%{label: "IND-2", quick: "true"})
+      assert Repo.get!(AssessmentLink, link.id).quick == true
+    end
+
+    test "quick must be a boolean" do
+      cs = AssessmentLink.individual_changeset(%AssessmentLink{}, %{label: "X", quick: "soon"})
+      assert %{quick: ["is invalid"]} = errors_on(cs)
+    end
+
+    test "a candidate link can never be quick" do
+      {recruiter, _} = recruiter_link_fixture()
+
+      cs =
+        AssessmentLink.candidate_changeset(%AssessmentLink{}, %{
+          recruiter_link_id: recruiter.id,
+          role_group: :finance,
+          quick: true
+        })
+
+      assert cs.valid?
+      assert Ecto.Changeset.get_field(cs, :quick) == false
+    end
+  end
+
   describe "individual link changeset" do
     test "needs a label of at most 40 characters" do
       assert %{label: [_]} = errors_on(Links.change_individual_link(%{}))

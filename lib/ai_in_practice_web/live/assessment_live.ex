@@ -258,10 +258,11 @@ defmodule AiInPracticeWeb.AssessmentLive do
       link_kind: link.kind,
       role_group: group,
       mode: mode,
+      quick: link.quick,
       date: Date.utc_today()
     }
 
-    case Assessment.start(group, meta: meta) do
+    case Assessment.start(group, meta: meta, quick: link.quick) do
       {:ok, id} ->
         {:noreply,
          socket
@@ -272,6 +273,14 @@ defmodule AiInPracticeWeb.AssessmentLive do
       {:error, _} ->
         {:noreply, failed(socket, :fatal)}
     end
+  end
+
+  defp hard_stop_minutes(meta) do
+    meta
+    |> Map.get(:quick, false)
+    |> Assessment.limits()
+    |> Map.fetch!(:hard_stop_ms)
+    |> div(60_000)
   end
 
   defp allow_voice(%{assigns: %{meta: %{mode: :voice}}} = socket) do
@@ -506,8 +515,11 @@ defmodule AiInPracticeWeb.AssessmentLive do
   defp phase(%{phase: :start} = assigns) do
     ~H"""
     <h1>A conversation about how you work with AI</h1>
-    <p class="lede">
+    <p :if={!@link.quick} class="lede">
       About 20 to 25 minutes of questions, answered in your own words. At the end you get two reports.
+    </p>
+    <p :if={@link.quick} class="lede" id="quick">
+      A quick session, a trial run: three or four questions in about three minutes, answered in your own words. At the end you get two reports, marked as quick.
     </p>
 
     <p :if={@link.kind == :candidate} id="sender">
@@ -522,7 +534,8 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
     <h2>Before you begin</h2>
     <ul id="before-you-begin">
-      <li>It takes about 20 to 25 minutes, and stops after 40 at most.</li>
+      <li :if={!@link.quick}>It takes about 20 to 25 minutes, and stops after 40 at most.</li>
+      <li :if={@link.quick}>It takes about three minutes, and stops after eight at most.</li>
       <li>
         You have one attempt. Closing or reloading this page ends the conversation, and the link cannot be opened again.
       </li>
@@ -688,7 +701,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
     ~H"""
     <h1>Writing your reports</h1>
     <p :if={@closed == :time_limit} id="time-up">
-      The 40 minutes are up, so the conversation has closed.
+      The {hard_stop_minutes(@meta)} minutes are up, so the conversation has closed.
     </p>
     <p class="lede" role="status" id="status">
       This usually takes under a minute. Please keep this page open.
@@ -700,7 +713,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
     ~H"""
     <h1>Your reports</h1>
     <p :if={@closed == :time_limit} id="time-up" class="quiet">
-      The 40 minutes were up, so the conversation closed there.
+      The {hard_stop_minutes(@meta)} minutes were up, so the conversation closed there.
     </p>
 
     <section class="notice" id="nothing-kept" role="note">

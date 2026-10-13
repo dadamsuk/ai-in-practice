@@ -61,7 +61,7 @@ defmodule AiInPracticeWeb.Admin.LinksLive do
          socket
          |> assign(
            issued: %{
-             what: "Individual link #{link.label}",
+             what: "Individual link #{link.label}#{if link.quick, do: " (quick)"}",
              url: LinkURLs.assessment_url(token)
            }
          )
@@ -144,6 +144,11 @@ defmodule AiInPracticeWeb.Admin.LinksLive do
       <h2>Issue an individual link</h2>
       <.form for={@individual_form} id="individual-form" phx-submit="create_individual">
         <.input field={@individual_form[:label]} label="label, e.g. ind-014" />
+        <.input
+          field={@individual_form[:quick]}
+          type="checkbox"
+          label="quick: three or four questions in about three minutes, for testing"
+        />
         <.button variant="primary">Issue individual link</.button>
       </.form>
 
@@ -220,6 +225,7 @@ defmodule AiInPracticeWeb.Admin.LinksLive do
         <thead>
           <tr>
             <th class="mono">label</th>
+            <th class="mono">length</th>
             <th class="mono">status</th>
             <th class="mono">role group</th>
             <th class="mono">created</th>
@@ -231,6 +237,7 @@ defmodule AiInPracticeWeb.Admin.LinksLive do
         <tbody>
           <tr :for={row <- @usage.individuals} id={"individual-#{row.link.id}"}>
             <td>{row.link.label}</td>
+            <td class="mono" data-length>{if row.link.quick, do: "quick", else: "full"}</td>
             <td class="mono" data-status>{individual_state(row)}</td>
             <td>{Links.role_group_name(row.link.role_group)}</td>
             <td class="mono">{LinkFormat.datetime(row.link.inserted_at)}</td>

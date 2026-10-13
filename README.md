@@ -124,7 +124,7 @@ The admin pages are at `/admin` (links, quotas, revoking, usage) and `/admin/rea
 ```sh
 # development
 mix links recruiter --firm "Northgate Search" --contact "Sam Jones" --email sam@example.com [--quota 10]
-mix links individual --label IND-014
+mix links individual --label IND-014 [--quick]   # --quick: 3 or 4 questions, for testing
 mix links quota RECRUITER_ID 15
 mix links revoke recruiter RECRUITER_ID
 mix links revoke link LINK_ID

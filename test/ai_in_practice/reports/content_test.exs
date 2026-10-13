@@ -128,6 +128,26 @@ defmodule AiInPractice.Reports.ContentTest do
     refute Enum.any?(Content.header(meta_fixture()), &match?({"sample", _}, &1))
   end
 
+  test "a quick session's report says so last in its header; a full one never does" do
+    full = Content.header(meta_fixture())
+    quick = Content.header(meta_fixture(%{quick: true}))
+
+    assert quick == full ++ [{"session", Content.quick()}]
+    assert Content.header(meta_fixture(%{quick: false})) == full
+    assert Content.quick() =~ "not a full conversation"
+  end
+
+  test "the check page shows the quick marker from the signed content" do
+    payload = report_fixture() |> Payload.assessor(meta_fixture(%{quick: true}))
+    payload = payload |> Jason.encode!() |> Jason.decode!()
+    assert {"session", Content.quick()} in Content.signed_header(payload)
+
+    full =
+      report_fixture() |> Payload.assessor(meta_fixture()) |> Jason.encode!() |> Jason.decode!()
+
+    refute Enum.any?(Content.signed_header(full), &match?({"session", _}, &1))
+  end
+
   describe "signed content (the check page)" do
     # As the check page gets it: decoded from the signed JSON.
     defp signed(report, meta \\ meta_fixture()),

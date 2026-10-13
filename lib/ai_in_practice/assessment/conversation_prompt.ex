@@ -94,6 +94,7 @@ defmodule AiInPractice.Assessment.ConversationPrompt do
           main_questions: non_neg_integer(),
           min_main_questions: pos_integer(),
           max_main_questions: pos_integer(),
+          aim_main_questions: {pos_integer(), pos_integer()},
           covered: MapSet.t(Rubric.area()),
           last_kind: Transcript.kind() | nil
         }
@@ -117,10 +118,11 @@ defmodule AiInPractice.Assessment.ConversationPrompt do
     minutes = div(p.elapsed_ms, 60_000)
     target = div(p.target_ms, 60_000)
     {covered, missing} = Enum.split_with(Rubric.areas(), &MapSet.member?(p.covered, &1))
+    {aim_low, aim_high} = p.aim_main_questions
 
     [
       "Time so far: #{minutes} minutes of about #{target}.",
-      "Main questions asked: #{p.main_questions} (aim for 10 to 14; do not close before #{p.min_main_questions} unless told to; never more than #{p.max_main_questions}).",
+      "Main questions asked: #{p.main_questions} (aim for #{aim_low} to #{aim_high}; do not close before #{p.min_main_questions} unless told to; never more than #{p.max_main_questions}).",
       "Areas you judged covered: #{names(covered)}.",
       "Areas still to cover: #{names(missing)}.",
       if(p.last_kind == :follow_up,

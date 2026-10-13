@@ -53,6 +53,7 @@ defmodule AiInPractice.Assessment.Session do
   @tasks AiInPractice.Assessment.TaskSupervisor
 
   @default_limits %{
+    aim_main_questions: {10, 14},
     min_main_questions: 8,
     max_main_questions: 14,
     max_turns: 24,
@@ -62,6 +63,17 @@ defmodule AiInPractice.Assessment.Session do
     max_answer_chars: 8_000,
     report_ttl_ms: :timer.minutes(60),
     reattach_ms: :timer.minutes(2)
+  }
+
+  # A quick session (a link issued with `quick`, for testing): three or four
+  # questions in about three minutes.
+  @quick_limits %{
+    aim_main_questions: {3, 4},
+    min_main_questions: 3,
+    max_main_questions: 4,
+    max_turns: 6,
+    target_ms: :timer.minutes(3),
+    hard_stop_ms: :timer.minutes(8)
   }
 
   defstruct [
@@ -90,14 +102,25 @@ defmodule AiInPractice.Assessment.Session do
   ## API
 
   @doc """
+  The limits a session starts from, before the `:assessment_limits` config
+  and the `:limits` option: the full session's, or with `quick?` the quick
+  session's (three or four questions in about three minutes, for testing).
+  """
+  @spec limits(boolean()) :: map()
+  def limits(quick? \\ false)
+  def limits(false), do: @default_limits
+  def limits(true), do: Map.merge(@default_limits, @quick_limits)
+
+  @doc """
   Starts a session for `role_group`, owned by `opts[:owner]` (default: the
   caller). The first question arrives as an event.
 
   Options: `:owner`, `:llm` (an `AiInPractice.LLM` client), `:reading`
   (the reading-list items, or a zero-arity function returning them;
   default `AiInPractice.Reading.active_items/0`, called when the report is
-  written), `:limits` (a map overriding any of the defaults, after those in
-  the `:assessment_limits` config), `:meta` (a map the caller wants back
+  written), `:quick` (true for a quick session: see `limits/1`), `:limits`
+  (a map overriding any of the defaults, after those in the
+  `:assessment_limits` config), `:meta` (a map the caller wants back
   from `attach/2` and `download/1`, such as the link's id and type; never
   anything the person said).
   """
@@ -198,7 +221,7 @@ defmodule AiInPractice.Assessment.Session do
     owner = Keyword.fetch!(opts, :owner)
 
     limits =
-      @default_limits
+      limits(Keyword.get(opts, :quick, false))
       |> Map.merge(Map.new(Application.get_env(:ai_in_practice, :assessment_limits, %{})))
       |> Map.merge(Map.new(Keyword.get(opts, :limits, %{})))
 
@@ -353,6 +376,7 @@ defmodule AiInPractice.Assessment.Session do
       main_questions: state.main_questions,
       min_main_questions: state.limits.min_main_questions,
       max_main_questions: state.limits.max_main_questions,
+      aim_main_questions: state.limits.aim_main_questions,
       covered: state.covered,
       last_kind: state.last_kind
     }

@@ -62,6 +62,61 @@ defmodule AiInPractice.Assessment.SessionTest do
     end
   end
 
+  describe "quick sessions" do
+    test "limits/1: the full session's are unchanged, the quick one's are short" do
+      full = Assessment.limits()
+      assert full == Assessment.limits(false)
+      assert full.aim_main_questions == {10, 14}
+      assert {full.min_main_questions, full.max_main_questions} == {8, 14}
+      assert full.hard_stop_ms == :timer.minutes(40)
+
+      quick = Assessment.limits(true)
+      assert quick.aim_main_questions == {3, 4}
+      assert {quick.min_main_questions, quick.max_main_questions} == {3, 4}
+      assert quick.max_turns == 6
+      assert quick.target_ms == :timer.minutes(3)
+      assert quick.hard_stop_ms == :timer.minutes(8)
+      # Limits a quick session doesn't change come from the full session.
+      assert quick.max_answer_chars == full.max_answer_chars
+      assert quick.report_ttl_ms == full.report_ttl_ms
+    end
+
+    test "a quick session closes after four main questions and tells the model so" do
+      turns = for n <- 1..5, do: LLMScript.turn("Q#{n}")
+      {id, agent} = start!(turns, quick: true)
+
+      for n <- 1..4 do
+        assert_event(id, {:question, %{text: "Q" <> _, number: ^n}})
+        :ok = Assessment.answer(id, "Answer #{n}.")
+      end
+
+      assert_event(id, {:closed, :max_questions})
+      assert_event(id, {:report, %Report{}})
+
+      [first | _] = LLMScript.requests(agent)
+      note = List.last(first.messages).content
+      assert note =~ "of about 3."
+      assert note =~ "aim for 3 to 4; do not close before 3"
+      assert note =~ "never more than 4"
+    end
+
+    test "the :limits option still overrides a quick session's limits" do
+      {id, agent} = start!([LLMScript.turn("Q1")], quick: true, limits: %{target_ms: 60_000})
+      assert_event(id, {:question, %{text: "Q1"}})
+      [first] = LLMScript.requests(agent)
+      assert List.last(first.messages).content =~ "of about 1."
+    end
+
+    test "a full session's progress note keeps the original wording" do
+      {id, agent} = start!([LLMScript.turn("Q1")])
+      assert_event(id, {:question, %{text: "Q1"}})
+      [first] = LLMScript.requests(agent)
+
+      assert List.last(first.messages).content =~
+               "Main questions asked: 0 (aim for 10 to 14; do not close before 8 unless told to; never more than 14)."
+    end
+  end
+
   describe "the turn loop" do
     test "coverage closes the conversation, but not before the minimum number of main questions" do
       {id, agent} =

@@ -18,6 +18,7 @@ defmodule AiInPractice.Assessment do
   alias AiInPractice.Assessment.Session
 
   defdelegate start(role_group, opts \\ []), to: Session
+  defdelegate limits(quick? \\ false), to: Session
   defdelegate answer(id, text), to: Session
   defdelegate finish_early(id), to: Session
   defdelegate report(id), to: Session

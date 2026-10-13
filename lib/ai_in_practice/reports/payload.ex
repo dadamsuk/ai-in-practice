@@ -15,7 +15,9 @@ defmodule AiInPractice.Reports.Payload do
 
   A sample report (`sample: true` in the meta, #724) carries a `"sample"`
   key saying so, so the check page shows it is fictional. Real reports have
-  no such key, so their payloads are unchanged.
+  no such key, so their payloads are unchanged. A quick session's report
+  (`quick: true`) carries a `"session"` key the same way, so it cannot pass
+  as a full one.
 
   The payload holds strings, integers, booleans, `null`, lists and maps
   only, so it encodes canonically (`AiInPractice.Reports.Canonical`).
@@ -70,6 +72,8 @@ defmodule AiInPractice.Reports.Payload do
         )
     }
 
-    if Map.get(meta, :sample), do: Map.put(payload, "sample", Content.sample()), else: payload
+    payload
+    |> then(&if Map.get(meta, :sample), do: Map.put(&1, "sample", Content.sample()), else: &1)
+    |> then(&if Map.get(meta, :quick), do: Map.put(&1, "session", Content.quick()), else: &1)
   end
 end

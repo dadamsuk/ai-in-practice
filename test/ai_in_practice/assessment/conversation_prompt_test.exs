@@ -14,6 +14,7 @@ defmodule AiInPractice.Assessment.ConversationPromptTest do
         main_questions: 0,
         min_main_questions: 8,
         max_main_questions: 14,
+        aim_main_questions: {10, 14},
         covered: MapSet.new(),
         last_kind: nil
       },

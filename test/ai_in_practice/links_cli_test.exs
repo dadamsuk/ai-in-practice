@@ -50,8 +50,26 @@ defmodule AiInPractice.LinksCLITest do
       assert {:ok, %{label: "IND-014"}} = out |> token_from() |> Links.begin_session()
     end
 
+    test "is full-length unless --quick is given" do
+      assert {:ok, out} = LinksCLI.run(~w(individual --label IND-015))
+      refute out =~ "quick"
+      assert {:ok, %{quick: false}} = out |> token_from() |> Links.begin_session()
+    end
+
+    test "--quick makes a quick link and says so" do
+      assert {:ok, out} = LinksCLI.run(~w(individual --label IND-016 --quick))
+      assert out =~ "IND-016 (quick)"
+      assert {:ok, %{quick: true}} = out |> token_from() |> Links.begin_session()
+    end
+
+    test "--quick takes no value" do
+      assert {:error, message} = LinksCLI.run(~w(individual --label IND-017 --quick yes))
+      assert message =~ "individual --label LABEL [--quick]"
+    end
+
     test "needs a label" do
       assert {:error, "label can't be blank\n"} = LinksCLI.run(~w(individual))
+      assert {:error, "label can't be blank\n"} = LinksCLI.run(~w(individual --quick))
     end
   end
 
@@ -124,7 +142,12 @@ defmodule AiInPractice.LinksCLITest do
              "open"
            ]
 
-    assert out =~ ~r/IND-7\s+unused/
+    assert out =~ ~r/IND-7\s+full\s+unused/
+    assert out =~ ~r/id\s+label\s+length\s+status/
+
+    {:ok, _} = LinksCLI.run(~w(individual --label IND-Q --quick))
+    assert {:ok, out} = LinksCLI.run(["usage"])
+    assert out =~ ~r/IND-Q\s+quick\s+unused/
   end
 
   test "unknown commands print usage" do

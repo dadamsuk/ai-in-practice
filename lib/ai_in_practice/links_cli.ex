@@ -7,13 +7,15 @@ defmodule AiInPractice.LinksCLI do
   ...`, which runs `rpc/1` inside the running node.
 
       recruiter --firm FIRM --contact NAME --email EMAIL [--quota N]
-      individual --label LABEL
+      individual --label LABEL [--quick]
       quota RECRUITER_ID N
       revoke recruiter RECRUITER_ID
       revoke link LINK_ID
       usage
 
   New links print their URL once: only a hash of the token is kept.
+  `--quick` makes a quick individual link: three or four questions in
+  about three minutes, for testing.
   """
 
   alias AiInPractice.Links
@@ -22,7 +24,7 @@ defmodule AiInPractice.LinksCLI do
   @usage """
   usage:
     links recruiter --firm FIRM --contact NAME --email EMAIL [--quota N]
-    links individual --label LABEL
+    links individual --label LABEL [--quick]
     links quota RECRUITER_ID N
     links revoke recruiter RECRUITER_ID
     links revoke link LINK_ID
@@ -57,12 +59,12 @@ defmodule AiInPractice.LinksCLI do
   end
 
   def run(["individual" | args]) do
-    with {:ok, opts} <- parse(args, label: :string) do
-      case Links.create_individual_link(%{label: opts[:label]}) do
+    with {:ok, opts} <- parse(args, label: :string, quick: :boolean) do
+      case Links.create_individual_link(%{label: opts[:label], quick: opts[:quick] || false}) do
         {:ok, link, token} ->
           {:ok,
            """
-           individual link #{link.id} #{link.label}
+           individual link #{link.id} #{link.label}#{if link.quick, do: " (quick)"}
            #{LinkURLs.assessment_url(token)}
            copy it now: it is shown only once.
            """}
@@ -166,6 +168,7 @@ defmodule AiInPractice.LinksCLI do
         [
           "#{i.link.id}",
           i.link.label,
+          if(i.link.quick, do: "quick", else: "full"),
           LinkFormat.state(i.state),
           LinkFormat.datetime(i.link.inserted_at)
         ]
@@ -178,7 +181,7 @@ defmodule AiInPractice.LinksCLI do
         recruiter_rows
       ),
       "\nindividual links\n",
-      columns(["id", "label", "status", "created"], individual_rows)
+      columns(["id", "label", "length", "status", "created"], individual_rows)
     ]
     |> IO.iodata_to_binary()
   end

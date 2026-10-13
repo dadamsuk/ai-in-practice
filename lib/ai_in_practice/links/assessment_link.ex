@@ -6,6 +6,8 @@ defmodule AiInPractice.Links.AssessmentLink do
     The recruiter sets the role group.
   * `:individual` links are issued by David with a label of his choosing
     (e.g. "IND-014"). The person picks their role group at the start.
+    David may make one `quick`: a session of three or four questions, for
+    testing (`AiInPractice.Assessment.limits/1`).
 
   A link moves from `:unused` to `:started` when the first question has been
   shown, and to `:completed` when the reports have been generated. Nothing
@@ -25,6 +27,7 @@ defmodule AiInPractice.Links.AssessmentLink do
     field :kind, Ecto.Enum, values: [:candidate, :individual]
     field :role_group, Ecto.Enum, values: @role_groups
     field :label, :string
+    field :quick, :boolean, default: false
     field :mode, Ecto.Enum, values: [:text, :voice]
     field :status, Ecto.Enum, values: [:unused, :started, :completed], default: :unused
     field :started_at, :utc_datetime
@@ -46,10 +49,10 @@ defmodule AiInPractice.Links.AssessmentLink do
     |> validate_required([:recruiter_link_id, :role_group])
   end
 
-  @doc "An individual link: needs a label, never a recruiter."
+  @doc "An individual link: needs a label, never a recruiter. It may be quick."
   def individual_changeset(link, attrs) do
     link
-    |> cast(attrs, [:label])
+    |> cast(attrs, [:label, :quick])
     |> update_change(:label, &String.trim/1)
     |> put_change(:kind, :individual)
     |> validate_required([:label])

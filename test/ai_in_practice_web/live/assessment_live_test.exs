@@ -375,6 +375,83 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
     end
   end
 
+  describe "quick sessions" do
+    defp quick_link do
+      {:ok, link, token} = Links.create_individual_link(%{label: "IND-Q", quick: true})
+      {link, token}
+    end
+
+    test "the start screen says it is quick and how long it takes", %{conn: conn} do
+      {_link, token} = quick_link()
+      {:ok, view, html} = live(conn, ~p"/a/#{token}")
+
+      assert view |> element("#quick") |> render() =~ "three or four questions"
+      assert html =~ "stops after eight at most"
+      refute html =~ "20 to 25 minutes"
+      refute html =~ ~r/interview|verified|score:/i
+    end
+
+    test "a full link's start screen never mentions quick", %{conn: conn} do
+      {_link, token} = individual_link_fixture()
+      {:ok, view, html} = live(conn, ~p"/a/#{token}")
+      refute has_element?(view, "#quick")
+      assert html =~ "20 to 25 minutes"
+    end
+
+    test "runs on the quick limits and marks the reports", %{conn: conn} do
+      {link, token} = quick_link()
+      agent = use_script(for n <- 1..5, do: LLMScript.turn("Q#{n}"))
+
+      {:ok, view, _} = live(conn, ~p"/a/#{token}")
+      view |> form("#begin-form", %{role_group: "finance"}) |> render_submit()
+
+      for n <- 1..4 do
+        await(view, "#question")
+        assert render(view) =~ "Q#{n}"
+        answer(view, "Answer #{n}.")
+      end
+
+      await(view, "#candidate-report")
+      assert render(view) =~ "not a full conversation"
+      assert Repo.get!(AssessmentLink, link.id).status == :completed
+
+      turns = agent |> LLMScript.requests() |> Enum.filter(&(&1.purpose == :turn))
+      assert length(turns) == 5
+      assert List.last(hd(turns).messages).content =~ "aim for 3 to 4"
+    end
+
+    test "a full link's reports are not marked quick", %{conn: conn, recruiter: recruiter} do
+      {_link, token} = candidate(recruiter)
+      use_script([LLMScript.turn("Q1"), LLMScript.turn("", [], close: true)])
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "One.")
+      await(view, "#candidate-report")
+      refute render(view) =~ "not a full conversation"
+    end
+
+    test "the time-up note gives the quick session's limit", %{conn: conn} do
+      {_link, token} = quick_link()
+      use_limits(%{hard_stop_ms: 300})
+
+      use_script([
+        LLMScript.turn("Q1"),
+        LLMScript.turn("Q2"),
+        fn _request ->
+          Process.sleep(500)
+          {:ok, Fake.report([])}
+        end
+      ])
+
+      {:ok, view, _} = live(conn, ~p"/a/#{token}")
+      view |> form("#begin-form", %{role_group: "finance"}) |> render_submit()
+      await(view, "#question")
+      answer(view, "One.")
+      await(view, "#time-up")
+      assert render(view) =~ "The 8 minutes are up"
+    end
+  end
+
   describe "odds and ends" do
     test "reading picks from the list appear in the candidate report", %{
       conn: conn,

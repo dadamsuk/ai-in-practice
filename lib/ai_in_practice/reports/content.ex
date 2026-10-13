@@ -41,18 +41,24 @@ defmodule AiInPractice.Reports.Content do
           required(:date) => Date.t(),
           required(:mode) => :text | :voice,
           required(:link_kind) => :candidate | :individual,
-          optional(:sample) => boolean()
+          optional(:sample) => boolean(),
+          optional(:quick) => boolean()
         }
 
   @statement "This report is a conversation starter. The identity of the person who took part has not been checked. It is one input to human judgement, never a decision on its own."
 
   @sample "a fictional person, made up for illustration"
 
+  @quick "quick, a trial run: three or four questions, not a full conversation"
+
   @doc "The assessor report's standing statement, shown in its header and on every page."
   def statement, do: @statement
 
   @doc "What a sample report says it is, in its header and its signed content."
   def sample, do: @sample
+
+  @doc "What a quick session's report says it is, in its header and its signed content."
+  def quick, do: @quick
 
   @doc "The report's title for an audience."
   @spec title(:candidate | :assessor) :: String.t()
@@ -67,7 +73,8 @@ defmodule AiInPractice.Reports.Content do
       {"role group", RoleGroups.name(meta.role_group)},
       {"date", Calendar.strftime(meta.date, "%-d %B %Y")},
       {"answers", if(meta.mode == :voice, do: "spoken", else: "typed")},
-      {"link", if(meta.link_kind == :individual, do: "individual", else: "from a recruiter")}
+      {"link", if(meta.link_kind == :individual, do: "individual", else: "from a recruiter")},
+      if(Map.get(meta, :quick), do: {"session", @quick}, else: [])
     ]
     |> List.flatten()
   end
@@ -147,7 +154,8 @@ defmodule AiInPractice.Reports.Content do
       {"role group", payload["role_group_name"]},
       {"date", signed_date(payload["date"])},
       {"answers", payload["answers"]},
-      {"link", payload["link"]}
+      {"link", payload["link"]},
+      if(is_binary(payload["session"]), do: {"session", payload["session"]}, else: [])
     ]
     |> List.flatten()
   end

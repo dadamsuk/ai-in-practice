@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Links do
   The admin link commands for development. See `AiInPractice.LinksCLI`.
 
       mix links recruiter --firm "Northgate Search" --contact "Sam" --email sam@example.com
-      mix links individual --label IND-014
+      mix links individual --label IND-014 [--quick]
       mix links quota 3 15
       mix links revoke recruiter 3
       mix links revoke link 12

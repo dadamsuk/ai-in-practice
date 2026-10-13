@@ -15,7 +15,8 @@ defmodule AiInPractice.SessionHelpers do
       Assessment.start(Keyword.get(opts, :role, :finance),
         llm: client,
         reading: Keyword.get(opts, :reading, []),
-        limits: limits
+        limits: limits,
+        quick: Keyword.get(opts, :quick, false)
       )
 
     {id, agent}
