@@ -1,0 +1,13 @@
+#!/bin/sh
+# The report signing key commands on a release (new, public, verify FILE).
+# See AiInPractice.SigningKeyCLI. Runs without the server. Each argument is
+# base64-encoded so that no quoting can break out of the eval expression.
+# It does not change directory, so a relative FILE works.
+set -eu
+
+encoded=""
+for arg in "$@"; do
+  encoded="$encoded $(printf '%s' "$arg" | base64 | tr -d '\n')"
+done
+
+exec "$(dirname -- "$0")/ai_in_practice" eval "AiInPractice.SigningKeyCLI.eval(\"$encoded\")"

@@ -5,6 +5,7 @@ defmodule AiInPracticeWeb.ReportControllerTest do
   import AiInPractice.SessionHelpers
 
   alias AiInPractice.{Assessment, LLMScript}
+  alias AiInPractice.Reports.{PDF, Signing}
 
   @moduletag :capture_log
 
@@ -34,7 +35,7 @@ defmodule AiInPracticeWeb.ReportControllerTest do
         ] do
       conn = get(build_conn(), ~p"/reports/#{id}/#{audience}")
       assert conn.status == 200
-      assert conn.resp_body =~ ~r/\A%PDF-1\.4/
+      assert conn.resp_body =~ ~r/\A%PDF-1\.\d/
       assert get_resp_header(conn, "content-type") == ["application/pdf"]
       assert get_resp_header(conn, "cache-control") == ["no-store"]
       assert get_resp_header(conn, "x-robots-tag") == ["noindex, nofollow"]
@@ -44,6 +45,37 @@ defmodule AiInPracticeWeb.ReportControllerTest do
     end
 
     assert conn
+  end
+
+  test "only the assessor PDF is signed, and it verifies against the published key", %{
+    conn: conn
+  } do
+    id = finished_session()
+    name = Signing.attachment_name()
+
+    assessor = get(conn, ~p"/reports/#{id}/assessor").resp_body
+    candidate = get(build_conn(), ~p"/reports/#{id}/candidate").resp_body
+
+    assert PDF.attachment(candidate, name) == :error
+    assert {:ok, envelope} = PDF.attachment(assessor, name)
+
+    %{"keys" => [published]} =
+      build_conn() |> get("/.well-known/ai-in-practice/signing-keys.json") |> json_response(200)
+
+    {:ok, keyring} = Signing.parse(private_key: Base.encode64(:crypto.strong_rand_bytes(32)))
+
+    public = %{
+      keyring
+      | current: %{
+          kid: published["kid"],
+          public_key: Base.decode64!(published["public_key"]),
+          private_key: nil
+        }
+    }
+
+    assert {:ok, payload} = Signing.verify(envelope, public)
+    assert payload["role_group"] == "finance"
+    assert payload["link"] == "from a recruiter"
   end
 
   test "downloads fail once the session has gone", %{conn: conn} do

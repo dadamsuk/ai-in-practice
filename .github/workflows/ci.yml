@@ -63,6 +63,9 @@ jobs:
             _build
           key: mix-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock') }}
           restore-keys: mix-${{ runner.os }}-test-
+      # The report PDF tests read the text back with pdftotext.
+      - name: Install poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: mix deps.get
       - name: Privacy gate (no transcript, report or token data in logs, disk or database)
         run: mix test --only privacy

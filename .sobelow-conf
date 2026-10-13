@@ -5,10 +5,13 @@
 #     (SecurityHeaders.csp/0) and reports it as missing at low confidence. The
 #     CSP is set on both routers' :browser pipelines and checked by
 #     test/ai_in_practice_web/plugs/security_headers_test.exs.
+#   Traversal.FileModule in lib/ai_in_practice/signing_key_cli.ex: the
+#     operator's own `signing_key verify FILE` reads the file they name, from
+#     a shell on the server. Nothing from a request reaches it.
 [
   verbose: false,
   private: false,
-  skip: false,
+  skip: true,
   router: nil,
   exit: "low",
   format: "txt",

@@ -5,11 +5,19 @@ defmodule AiInPractice.Application do
 
   use Application
 
+  alias AiInPractice.Reports.Signing
+
   @impl true
   def start(_type, _args) do
     AiInPractice.AdminBind.validate!(
       Application.get_env(:ai_in_practice, :env),
       Application.get_env(:ai_in_practice, AiInPracticeWeb.AdminEndpoint)
+    )
+
+    # Assessor reports are signed: no release runs without a key (PRD §9).
+    Signing.validate!(
+      Application.get_env(:ai_in_practice, :env),
+      Application.get_env(:ai_in_practice, :report_signing)
     )
 
     # Crash reports must never carry session data (PRD §10).

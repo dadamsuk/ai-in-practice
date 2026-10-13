@@ -5,7 +5,8 @@ defmodule AiInPractice.RuntimeConfigTest do
 
   alias AiInPractice.AdminBind
 
-  @vars ~w(ADMIN_IP ADMIN_PORT DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PHX_SERVER FAKE_LLM)
+  @vars ~w(ADMIN_IP ADMIN_PORT DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PHX_SERVER FAKE_LLM
+           REPORT_SIGNING_KEY REPORT_SIGNING_RETIRED_KEYS)
 
   setup do
     saved = Map.new(@vars, &{&1, System.get_env(&1)})
@@ -53,6 +54,56 @@ defmodule AiInPractice.RuntimeConfigTest do
 
     assert_raise ArgumentError, ~r/must not bind to 0\.0\.0\.0/, fn ->
       AdminBind.validate!(:prod, admin_config(read_prod()))
+    end
+  end
+
+  describe "REPORT_SIGNING_KEY" do
+    alias AiInPractice.Reports.Signing
+
+    setup do
+      System.put_env("ADMIN_IP", "100.88.155.65")
+      :ok
+    end
+
+    defp signing_config(config), do: config[:ai_in_practice][:report_signing]
+
+    test "production refuses to boot without it" do
+      config = signing_config(read_prod())
+      assert config == nil
+
+      assert_raise ArgumentError, ~r/REPORT_SIGNING_KEY/, fn ->
+        Signing.validate!(:prod, config)
+      end
+    end
+
+    test "production boots with it, and with retired keys" do
+      key = Signing.generate()
+      retired = Signing.generate()
+      System.put_env("REPORT_SIGNING_KEY", key.private_key)
+      System.put_env("REPORT_SIGNING_RETIRED_KEYS", retired.public_key)
+      config = signing_config(read_prod())
+
+      assert Signing.validate!(:prod, config) == :ok
+      {:ok, keyring} = Signing.parse(config)
+      assert keyring.current.kid == key.kid
+      assert [%{kid: kid}] = keyring.retired
+      assert kid == retired.kid
+    end
+
+    test "an invalid key stops boot" do
+      System.put_env("REPORT_SIGNING_KEY", "not-a-key")
+
+      assert_raise ArgumentError, ~r/32-byte/, fn ->
+        Signing.validate!(:prod, signing_config(read_prod()))
+      end
+    end
+
+    test "a release with no key will not sign with an ephemeral one" do
+      saved = Application.get_env(:ai_in_practice, :env)
+      Application.put_env(:ai_in_practice, :env, :prod)
+      on_exit(fn -> Application.put_env(:ai_in_practice, :env, saved) end)
+
+      assert_raise ArgumentError, ~r/REPORT_SIGNING_KEY/, fn -> Signing.keyring() end
     end
   end
 

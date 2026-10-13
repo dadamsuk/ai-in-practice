@@ -23,6 +23,7 @@ This repository holds the whole application and the rubric it assesses against, 
 | A recruiter's labels for their candidate links (e.g. initials) stay in their own browser and are never sent to the server. | `lib/ai_in_practice_web/live/recruiter_live.ex`. Test: `test/ai_in_practice_web/live/recruiter_live_test.exs` |
 | Link tokens never reach the logs, nor do answers or the session id that report downloads use. | `lib/ai_in_practice_web/plugs/request_logger.ex` redacts them from request paths. `config/config.exs` filters `token`, `answer` and `session` from logged params. Tests: `test/ai_in_practice_web/plugs/request_logger_test.exs`, `test/ai_in_practice_web/live/assessment_privacy_test.exs` |
 | Reports are downloaded from the live session's memory, and from nowhere else. Once the page is closed or the hour is up, there is nothing to download. | `lib/ai_in_practice_web/controllers/report_controller.ex`. Test: `test/ai_in_practice_web/controllers/report_controller_test.exs` |
+| Report PDFs are made in memory when downloaded and never written anywhere. The signed copy of the assessor report holds only what it visibly says: no internal levels or confidence, and no link id. | `lib/ai_in_practice/reports/pdf.ex` (Typst runs in memory, with the report passed as an in-memory file), `lib/ai_in_practice/reports/payload.ex`. Tests: `test/ai_in_practice/reports/payload_test.exs`, `pdf_test.exs` |
 | An unusable link says nothing about itself: unknown, withdrawn, used and completed links get the same page. | `lib/ai_in_practice_web/plugs/usable_link.ex`. Test: `test/ai_in_practice_web/plugs/usable_link_test.exs` |
 | Assessment pages and report downloads are never cached or indexed, and links do not leak through the `Referer` header. | `lib/ai_in_practice_web/plugs/security_headers.ex` |
 | No third-party requests: fonts are self-hosted and there is no analytics. | `priv/static/fonts`, `test/ai_in_practice_web/design_system_test.exs` |
@@ -64,7 +65,29 @@ The link is used up when the first question arrives and completed when the repor
 
 **Reconnecting:** if the connection drops, the page reattaches to the same session for up to two minutes. Reloading or closing the page ends the conversation.
 
-The PDFs are interim plain renderings (`lib/ai_in_practice/reports/pdf.ex`) of the same content the screen shows (`lib/ai_in_practice/reports/content.ex`). Epic 5 replaces them with the designed A4 templates and signs the assessor report.
+## Reports and signatures
+
+Both reports download as A4 PDFs in the printed-specification register: a running head rule, a serif body, mono labels, hairlines between areas, and a running foot with the role group, date and versions. Every page of the assessor report also carries the statement that it is a conversation starter, that identity is not checked, and that it is one input to human judgement. They are rendered with [Typst](https://typst.app) (the `typst` package, in memory) from [`priv/reports/report.typ`](priv/reports/report.typ), using the same content the screen shows (`lib/ai_in_practice/reports/content.ex`). The fonts (Source Serif 4 and IBM Plex Mono, OFL) are embedded from `priv/fonts/`. **PDFs are made when downloaded and never stored.**
+
+**The assessor report is signed** with Ed25519 (`lib/ai_in_practice/reports/signing.ex`). The PDF has an attached file, `ai-in-practice-signed-report.json`, that holds:
+
+```json
+{"alg": "Ed25519", "kid": "…", "payload": {…the report…}, "signature": "…"}
+```
+
+`payload` is what the report says (`lib/ai_in_practice/reports/payload.ex`): the header facts, versions, summary, areas with quotes, what to explore next and the questions to ask. It never holds the internal levels or confidence. `signature` is the Base64 Ed25519 signature over the payload as canonical JSON: keys sorted by their UTF-8 bytes at every depth, no whitespace, and no floats (`lib/ai_in_practice/reports/canonical.ex`). Anyone can compare the signed payload with the visible PDF, so any edit to the PDF shows up as a mismatch. The candidate's own report is not signed.
+
+**Public keys** are published at [`/.well-known/ai-in-practice/signing-keys.json`](https://ai-in-practice.dsc.net/.well-known/ai-in-practice/signing-keys.json): the current key and any retired ones, each with its `kid` (the first 16 hex digits of the SHA-256 of the public key). The production key is listed there, rather than here, so this file cannot drift from it.
+
+```sh
+mix signing_key new                  # a new key: the REPORT_SIGNING_KEY line, its public key and id
+mix signing_key public               # the public keys this server publishes
+mix signing_key verify FILE.pdf      # check an assessor report's signature
+
+bin/signing_key verify FILE.pdf      # the same on a release (runs without the server)
+```
+
+**Rotating the key:** set the new key in `REPORT_SIGNING_KEY` and add the old public key to `REPORT_SIGNING_RETIRED_KEYS` (comma-separated), so reports it signed still verify. Production refuses to start without a valid key. In development and tests an ephemeral key is made at each start.
 
 ## Links and access
 
@@ -108,7 +131,9 @@ mix phx.server
 - Public site: <http://localhost:4100>
 - Admin: <http://localhost:4101/admin> (localhost only in dev. Set `ADMIN_IP` to bind it elsewhere)
 
-Production needs `DATABASE_PATH`, `SECRET_KEY_BASE`, `PHX_HOST` and `ADMIN_IP` (the host's Tailscale address). `OPENROUTER_API_KEY` is needed for the model. Optional: `ADMIN_PORT` (default 4001), `PORT` (default 4000), `OPENROUTER_MODEL`. The app refuses to start if `ADMIN_IP` is missing or is `0.0.0.0` or `::`.
+Production needs `DATABASE_PATH`, `SECRET_KEY_BASE`, `PHX_HOST`, `ADMIN_IP` (the host's Tailscale address) and `REPORT_SIGNING_KEY` (from `bin/signing_key new`). `OPENROUTER_API_KEY` is needed for the model. Optional: `ADMIN_PORT` (default 4001), `PORT` (default 4000), `OPENROUTER_MODEL`, `REPORT_SIGNING_RETIRED_KEYS`. The app refuses to start if `ADMIN_IP` is missing or is `0.0.0.0` or `::`, or if `REPORT_SIGNING_KEY` is missing or invalid.
+
+The report PDF tests read the text back with `pdftotext` (poppler-utils), so install it to run the suite.
 
 ## CI gates
 

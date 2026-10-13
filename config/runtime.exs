@@ -29,6 +29,16 @@ if api_key = System.get_env("OPENROUTER_API_KEY") do
   config :ai_in_practice, openrouter_api_key: api_key
 end
 
+# The assessor report signing key (AiInPractice.Reports.Signing): a Base64
+# Ed25519 seed, and the public keys of retired ones, comma-separated. In
+# production the application refuses to boot without a key; elsewhere an
+# ephemeral key is made at boot.
+if signing_key = System.get_env("REPORT_SIGNING_KEY") do
+  config :ai_in_practice, :report_signing,
+    private_key: signing_key,
+    retired: System.get_env("REPORT_SIGNING_RETIRED_KEYS")
+end
+
 # The fake model, for walking the journey without spending. Dev only.
 if config_env() == :dev do
   fake_mode = System.get_env("FAKE_LLM")

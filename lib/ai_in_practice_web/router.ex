@@ -34,10 +34,21 @@ defmodule AiInPracticeWeb.Router do
     plug SecurityHeaders, private: true
   end
 
+  pipeline :public_json do
+    plug :accepts, ["json"]
+  end
+
   scope "/", AiInPracticeWeb do
     pipe_through :browser
 
     get "/", PageController, :home
+  end
+
+  # The public keys that sign assessor reports, for anyone verifying one.
+  scope "/.well-known/ai-in-practice", AiInPracticeWeb do
+    pipe_through :public_json
+
+    get "/signing-keys.json", SigningKeyController, :index
   end
 
   # Every route here carries a link token in its path.
