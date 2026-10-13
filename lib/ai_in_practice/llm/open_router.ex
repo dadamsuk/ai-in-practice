@@ -88,6 +88,7 @@ defmodule AiInPractice.LLM.OpenRouter do
       provider: @provider
     }
     |> put_optional(:temperature, Map.get(request, :temperature))
+    |> put_optional(:reasoning, Map.get(request, :reasoning))
     |> put_optional(:response_format, request |> Map.get(:schema) |> format())
   end
 
@@ -149,7 +150,7 @@ defmodule AiInPractice.LLM.OpenRouter do
   def classify(_status, _error), do: :fatal
 
   defp parse(%{"message" => %{"content" => content}}, body, request) when is_binary(content) do
-    usage = %{total_tokens: get_in(body, ["usage", "total_tokens"]) || 0}
+    usage = usage(body["usage"])
 
     case Map.get(request, :schema) do
       nil ->
@@ -164,6 +165,19 @@ defmodule AiInPractice.LLM.OpenRouter do
   end
 
   defp parse(_choice, _body, _request), do: {:error, :transient}
+
+  # OpenRouter reports the cost of the call in US dollars; the evaluation
+  # harness's budget guard counts it.
+  defp usage(%{} = usage) do
+    base = %{total_tokens: usage["total_tokens"] || 0}
+
+    case usage["cost"] do
+      cost when is_number(cost) -> Map.put(base, :cost, cost)
+      _ -> base
+    end
+  end
+
+  defp usage(_), do: %{total_tokens: 0}
 
   # Some models wrap JSON in a Markdown code fence even when asked not to.
   defp strip_fences(content) do

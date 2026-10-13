@@ -169,7 +169,9 @@ defmodule AiInPractice.Assessment.ConversationPrompt do
       ],
       schema: schema(),
       max_tokens: 400,
-      temperature: 0.4
+      # Haiku 5.5 reasons by default, and its reasoning can use up the
+      # whole budget, leaving no reply (#713). A turn needs none.
+      reasoning: %{enabled: false}
     }
   end
 

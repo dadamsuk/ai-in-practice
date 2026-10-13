@@ -119,7 +119,9 @@ defmodule AiInPractice.Assessment.ReportPrompt do
       ],
       schema: schema(),
       max_tokens: 8000,
-      temperature: 0.2
+      # A little reasoning for the judgement, bounded so it cannot use up
+      # the budget the report needs (#713).
+      reasoning: %{effort: "low"}
     }
   end
 

@@ -146,6 +146,22 @@ defmodule AiInPractice.Assessment.ConversationPromptTest do
     assert Enum.sort(required) == ~w(close covered_areas kind question)
   end
 
+  # Haiku 5.5's zero-retention endpoints do not take `temperature`, and with
+  # `require_parameters` OpenRouter then finds no endpoint at all (#713).
+  test "request/3 sets no temperature" do
+    refute Map.has_key?(
+             ConversationPrompt.request(:finance, %Transcript{}, progress()),
+             :temperature
+           )
+  end
+
+  # Left to its default, Haiku 5.5 can spend all 400 tokens reasoning and
+  # return no content (#713).
+  test "request/3 turns reasoning off" do
+    request = ConversationPrompt.request(:finance, %Transcript{}, progress())
+    assert request.reasoning == %{enabled: false}
+  end
+
   describe "parse/1" do
     test "a question with known and unknown areas" do
       assert {:ok, %{question: "Why?", kind: :follow_up, covered: [:attitude], close: false}} =

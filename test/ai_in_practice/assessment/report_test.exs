@@ -397,5 +397,16 @@ defmodule AiInPractice.Assessment.ReportTest do
       assert request.purpose == :report
       assert request.schema == ReportPrompt.schema()
     end
+
+    # Haiku 5.5's zero-retention endpoints do not take `temperature`, and
+    # with `require_parameters` OpenRouter then finds no endpoint at all
+    # (found on the first live run, #713).
+    test "the request sets no temperature" do
+      refute Map.has_key?(ReportPrompt.request(:finance, transcript(), []), :temperature)
+    end
+
+    test "the request bounds reasoning at low effort" do
+      assert ReportPrompt.request(:finance, transcript(), []).reasoning == %{effort: "low"}
+    end
   end
 end

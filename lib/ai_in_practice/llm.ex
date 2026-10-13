@@ -25,19 +25,20 @@ defmodule AiInPractice.LLM do
 
   require Logger
 
-  @type purpose :: :turn | :report
+  @type purpose :: :turn | :report | :respondent
   @type message :: %{role: String.t(), content: String.t()}
   @type request :: %{
           required(:purpose) => purpose(),
           required(:messages) => [message()],
           optional(:schema) => {String.t(), map()} | nil,
           optional(:max_tokens) => pos_integer(),
-          optional(:temperature) => number()
+          optional(:temperature) => number(),
+          optional(:reasoning) => map()
         }
   @type response :: %{
           content: String.t(),
           data: map() | nil,
-          usage: %{total_tokens: non_neg_integer()}
+          usage: %{required(:total_tokens) => non_neg_integer(), optional(:cost) => number()}
         }
   @type error_class :: :spend_refused | :rate_limited | :transient | :fatal
   @type client :: {module(), keyword()}

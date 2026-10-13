@@ -91,6 +91,41 @@ defmodule AiInPractice.LLM.OpenRouterTest do
       assert body["temperature"] == 0.2
     end
 
+    test "reasoning settings are passed through, and left out when unset" do
+      parent = self()
+
+      Req.Test.expect(OpenRouter, 2, fn conn ->
+        send(parent, {:body, decoded_body(conn)})
+        reply(conn, 200, ok_body("x"))
+      end)
+
+      assert {:ok, _} = LLM.complete(request(%{reasoning: %{enabled: false}}), @client)
+      assert_received {:body, %{"reasoning" => %{"enabled" => false}}}
+
+      assert {:ok, _} = LLM.complete(request(), @client)
+      assert_received {:body, body}
+      refute Map.has_key?(body, "reasoning")
+    end
+
+    test "usage carries the cost when OpenRouter reports one, and only then" do
+      Req.Test.expect(OpenRouter, 3, fn conn ->
+        case decoded_body(conn)["max_tokens"] do
+          1 -> reply(conn, 200, put_in(ok_body("a"), ["usage", "cost"], 0.0125))
+          2 -> reply(conn, 200, put_in(ok_body("b"), ["usage", "cost"], "free"))
+          3 -> reply(conn, 200, Map.delete(ok_body("c"), "usage"))
+        end
+      end)
+
+      assert {:ok, %{usage: %{total_tokens: 321, cost: 0.0125}}} =
+               LLM.complete(request(%{max_tokens: 1}), @client)
+
+      assert {:ok, %{usage: usage}} = LLM.complete(request(%{max_tokens: 2}), @client)
+      assert usage == %{total_tokens: 321}
+
+      assert {:ok, %{usage: usage}} = LLM.complete(request(%{max_tokens: 3}), @client)
+      assert usage == %{total_tokens: 0}
+    end
+
     test "a JSON reply wrapped in a code fence is still parsed" do
       Req.Test.expect(OpenRouter, fn conn ->
         reply(conn, 200, ok_body("```json\n{\"a\": 1}\n```"))
