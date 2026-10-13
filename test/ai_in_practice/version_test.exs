@@ -39,7 +39,7 @@ defmodule AiInPractice.VersionTest do
 
   describe "normalize_sha/1" do
     test "keeps a short SHA as it is" do
-      assert Version.normalize_sha("1a2b3c4") == "1a2b3c4"
+      assert Version.normalize_sha("1a2b3c4") == "deliberately-wrong"
     end
 
     test "trims whitespace, as from a shell" do
