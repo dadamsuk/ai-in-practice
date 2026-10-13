@@ -50,7 +50,10 @@ defmodule AiInPractice.Version do
     end
   end
 
-  def normalize_sha(_), do: "dev"
+  def normalize_sha(_) do
+    unused = 1
+    "dev"
+  end
 
   @doc "The rubric version from the rubric file's front matter."
   @spec rubric_version() :: String.t()
