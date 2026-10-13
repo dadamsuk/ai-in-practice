@@ -33,6 +33,7 @@ These are synthetic people, but the files still never go in the repository, the 
 - at most `max_insufficient` (2) areas with only "insufficient evidence"
 - the manipulation note on every report for a persona that steers, and on no other
 - no question naming a level or a score, and no back-to-back follow-ups
+- no report speaking to the person as "you" in the text both reports share (summary, overall, area descriptions), outside quotation marks (`max_second_person`, 0). Haiku slipped into "your profile is…" in the overall paragraph on 20–50% of reports before the prompt said so outright (#724). Summaries from before this check pass it.
 
 ```sh
 mix eval.gate                                   # run and check (about $0.20)
@@ -41,6 +42,10 @@ mix eval.gate --write-baseline DIR/summary.json # reset the baseline from a full
 ```
 
 Reset the baseline only from a full run (three runs per persona), and only after a deliberate change to the rubric or the prompts, in the same commit.
+
+## The sample report
+
+`mix eval.sample [PERSONA_FILE]` runs one fictional persona once (default `eval/samples/sample-operations-director.yml`) and writes `sample-assessor-report.pdf` and `sample-your-report.pdf` beside the run's JSON. Both say "sample: a fictional person, made up for illustration" in the header and "sample: fictional" on every page; the assessor report's signed content carries the same marker, so the check page shows it. Options: `--out DIR`, `--max-spend USD` (default 0.50), `--model`, `--report-model`, `--respondent-model`, `--fake`. Personas in `eval/samples/` are not part of the evaluation set.
 
 ## Writing a persona
 

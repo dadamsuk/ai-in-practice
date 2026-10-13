@@ -65,6 +65,8 @@ defmodule AiInPractice.Eval.HarnessTest do
     assert markdown =~ "| report | 4 | none |"
     assert markdown =~ "Report rejections (each regenerated once): none"
     assert markdown =~ "Questions: 3.00 per run, 0 follow-ups (0 back to back)"
+    assert markdown =~ ~s(Voice: no report of 4 said "you" in shared text)
+    assert s.voice == %{reports: 4, second_person: 0, fields: []}
 
     assert %{runs: 4, questions: 12, follow_ups: 0, consecutive_follow_ups: 0} = s.questions
     assert %{runs: 2, questions: 6} = hd(s.personas).questions

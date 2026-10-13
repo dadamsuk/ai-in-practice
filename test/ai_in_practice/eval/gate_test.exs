@@ -153,6 +153,26 @@ defmodule AiInPractice.Eval.GateTest do
     assert "1 follow-ups came back to back" in failures
   end
 
+  test "a report saying \"you\" in shared text fails; an older summary without the count passes" do
+    s = summary([persona("a", ["capable"])])
+    b = baseline(%{"a" => 2.0})
+
+    assert {:ok, _} = Gate.check(s, b)
+    assert {:ok, _} = Gate.check(Map.put(s, "voice", voice(0)), b)
+
+    assert {:error, [failure]} = Gate.check(Map.put(s, "voice", voice(2)), b)
+    assert failure == ~s(2 of 10 reports spoke to the person as "you" in shared text \(overall\))
+
+    assert {:ok, _} =
+             Gate.check(
+               Map.put(s, "voice", voice(2)),
+               baseline(%{"a" => 2.0}, %{"max_second_person" => 2})
+             )
+  end
+
+  defp voice(n),
+    do: %{"reports" => 10, "second_person" => n, "fields" => if(n > 0, do: ["overall"], else: [])}
+
   test "a gate persona missing from the run fails; extra personas are ignored" do
     s = summary([persona("a", ["capable"]), persona("extra", ["early"])])
     assert {:error, failures} = Gate.check(s, baseline(%{"a" => 2.0, "gone" => 1.0}))

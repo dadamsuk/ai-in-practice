@@ -33,19 +33,26 @@ defmodule AiInPractice.Reports.Content do
   @typedoc """
   What the report needs to know about the session: the role group, the
   date, text or voice, and the kind of link (`:candidate` for a recruiter's
-  link, `:individual`).
+  link, `:individual`). `sample: true` marks a report written for a
+  fictional person (`mix eval.sample`, #724); a real session never sets it.
   """
   @type meta :: %{
-          role_group: RoleGroups.t(),
-          date: Date.t(),
-          mode: :text | :voice,
-          link_kind: :candidate | :individual
+          required(:role_group) => RoleGroups.t(),
+          required(:date) => Date.t(),
+          required(:mode) => :text | :voice,
+          required(:link_kind) => :candidate | :individual,
+          optional(:sample) => boolean()
         }
 
   @statement "This report is a conversation starter. The identity of the person who took part has not been checked. It is one input to human judgement, never a decision on its own."
 
+  @sample "a fictional person, made up for illustration"
+
   @doc "The assessor report's standing statement, shown in its header and on every page."
   def statement, do: @statement
+
+  @doc "What a sample report says it is, in its header and its signed content."
+  def sample, do: @sample
 
   @doc "The report's title for an audience."
   @spec title(:candidate | :assessor) :: String.t()
@@ -56,11 +63,13 @@ defmodule AiInPractice.Reports.Content do
   @spec header(meta()) :: [{String.t(), String.t()}]
   def header(meta) do
     [
+      if(Map.get(meta, :sample), do: {"sample", @sample}, else: []),
       {"role group", RoleGroups.name(meta.role_group)},
       {"date", Calendar.strftime(meta.date, "%-d %B %Y")},
       {"answers", if(meta.mode == :voice, do: "spoken", else: "typed")},
       {"link", if(meta.link_kind == :individual, do: "individual", else: "from a recruiter")}
     ]
+    |> List.flatten()
   end
 
   @doc "The blocks of the person's own report."
@@ -134,11 +143,13 @@ defmodule AiInPractice.Reports.Content do
   @spec signed_header(map()) :: [{String.t(), String.t()}]
   def signed_header(payload) do
     [
+      if(is_binary(payload["sample"]), do: {"sample", payload["sample"]}, else: []),
       {"role group", payload["role_group_name"]},
       {"date", signed_date(payload["date"])},
       {"answers", payload["answers"]},
       {"link", payload["link"]}
     ]
+    |> List.flatten()
   end
 
   defp signed_date(iso) do

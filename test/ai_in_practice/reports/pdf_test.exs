@@ -277,6 +277,29 @@ defmodule AiInPractice.Reports.PDFTest do
              "\nhttps://example.com/short\n"
   end
 
+  test "a sample says so in its header and on every page, and its signed content says so",
+       %{tmp_dir: dir} do
+    keyring = keyring()
+    report = long_report()
+    meta = meta_fixture(%{sample: true})
+
+    for audience <- [:candidate, :assessor] do
+      pages = pages(PDF.render(audience, report, meta, keyring), dir)
+      assert length(pages) > 1
+      assert hd(pages) |> flat() =~ "a fictional person, made up for illustration"
+      for page <- pages, do: assert(page =~ "sample: fictional · Finance")
+    end
+
+    pdf = PDF.render(:assessor, report, meta, keyring)
+    {:ok, envelope} = PDF.attachment(pdf, Signing.attachment_name())
+    assert {:ok, %{"sample" => sample}} = Signing.verify(envelope, keyring)
+    assert sample == Content.sample()
+
+    real = text(PDF.render(:assessor, report, meta_fixture(), keyring), dir)
+    refute real =~ "sample"
+    refute real =~ "fictional"
+  end
+
   test "file names" do
     assert PDF.filename(:candidate) == "ai-in-practice-your-report.pdf"
     assert PDF.filename(:assessor) == "ai-in-practice-assessor-report.pdf"

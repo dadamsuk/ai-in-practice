@@ -119,6 +119,15 @@ defmodule AiInPractice.Reports.ContentTest do
     assert {"answers", "spoken"} in Content.header(meta_fixture(%{mode: :voice}))
   end
 
+  test "a sample report says so first in its header; a real one never does" do
+    assert [{"sample", "a fictional person, made up for illustration"} | rest] =
+             Content.header(meta_fixture(%{sample: true}))
+
+    assert rest == Content.header(meta_fixture())
+    assert Content.header(meta_fixture(%{sample: false})) == Content.header(meta_fixture())
+    refute Enum.any?(Content.header(meta_fixture()), &match?({"sample", _}, &1))
+  end
+
   describe "signed content (the check page)" do
     # As the check page gets it: decoded from the signed JSON.
     defp signed(report, meta \\ meta_fixture()),
@@ -133,9 +142,18 @@ defmodule AiInPractice.Reports.ContentTest do
     end
 
     test "the signed header matches the report's header" do
-      for meta <- [meta_fixture(), meta_fixture(%{link_kind: :individual, mode: :voice})] do
+      for meta <- [
+            meta_fixture(),
+            meta_fixture(%{link_kind: :individual, mode: :voice}),
+            meta_fixture(%{sample: true})
+          ] do
         assert Content.signed_header(signed(report_fixture(), meta)) == Content.header(meta)
       end
+    end
+
+    test "a sample marker that is not text is not shown" do
+      payload = signed(report_fixture()) |> Map.put("sample", true)
+      assert Content.signed_header(payload) == Content.header(meta_fixture())
     end
 
     test "empty or missing parts are left out rather than shown blank" do

@@ -19,6 +19,9 @@ defmodule AiInPractice.Eval.Gate do
       the manipulation note, or one that doesn't got the note
     * any question named a level or a score (`max_level_leaks`), or two
       follow-ups came back to back
+    * more than `max_second_person` reports spoke to the person as "you"
+      in text both reports share (`AiInPractice.Eval.Voice`); summaries
+      from before this check have no `voice` and pass it
     * a gate persona is missing from the summary
 
   Summaries and baselines are read as decoded JSON (string keys), as
@@ -30,7 +33,8 @@ defmodule AiInPractice.Eval.Gate do
     "max_area_drift" => 1.0,
     "max_mean_drift" => 0.5,
     "max_level_leaks" => 0,
-    "max_insufficient" => 2
+    "max_insufficient" => 2,
+    "max_second_person" => 0
   }
 
   @ranks %{"early" => 0, "developing" => 1, "capable" => 2, "advanced" => 3}
@@ -64,7 +68,8 @@ defmodule AiInPractice.Eval.Gate do
         drift_failures ++
         mean_drift(drifts, t) ++
         Enum.flat_map(present, fn {id, p} -> manipulation(id, p) end) ++
-        questions(summary, t)
+        questions(summary, t) ++
+        voice(summary, t)
 
     notes = [
       "#{summary["totals"]["reports"]}/#{summary["totals"]["runs"]} reports; " <>
@@ -159,6 +164,17 @@ defmodule AiInPractice.Eval.Gate do
 
     leaks ++ follow_ups
   end
+
+  defp voice(%{"voice" => %{"second_person" => n} = v}, t) do
+    if n > t["max_second_person"],
+      do: [
+        "#{n} of #{v["reports"]} reports spoke to the person as \"you\" in shared text " <>
+          "(#{Enum.join(v["fields"] || [], ", ")})"
+      ],
+      else: []
+  end
+
+  defp voice(_summary, _t), do: []
 
   @doc """
   A baseline from a summary: every persona in it, each area's mean rank,

@@ -32,6 +32,25 @@ defmodule AiInPractice.Reports.PayloadTest do
     assert other["link"] == "individual"
   end
 
+  test "a sample says so in the signed content; a real report has no sample key" do
+    report = report_fixture()
+    real = Payload.assessor(report, meta_fixture())
+    sample = Payload.assessor(report, meta_fixture(%{sample: true}))
+
+    refute Map.has_key?(real, "sample")
+    refute Map.has_key?(Payload.assessor(report, meta_fixture(%{sample: false})), "sample")
+    assert sample["sample"] == Content.sample()
+    assert Map.delete(sample, "sample") == real
+
+    # Signed with the marker, so removing it breaks the signature.
+    {:ok, keyring} = Signing.parse(private_key: Signing.generate().private_key)
+    envelope = Signing.envelope(sample, keyring)
+    assert {:ok, %{"sample" => _}} = Signing.verify(envelope, keyring)
+
+    stripped = envelope |> Jason.decode!() |> update_in(["payload"], &Map.delete(&1, "sample"))
+    assert {:error, _} = Signing.verify(Jason.encode!(stripped), keyring)
+  end
+
   test "holds every assessor section, in the report's words" do
     report = report_fixture()
     payload = Payload.assessor(report, meta_fixture())

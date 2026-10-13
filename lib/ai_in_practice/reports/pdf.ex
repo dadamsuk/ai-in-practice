@@ -86,12 +86,14 @@ defmodule AiInPractice.Reports.PDF do
   defp foot(meta) do
     Enum.join(
       [
+        if(Map.get(meta, :sample), do: "sample: fictional"),
         RoleGroups.name(meta.role_group),
         Date.to_iso8601(meta.date),
         "code #{Version.code_version()}",
         "rubric v#{Version.rubric_version()}",
         "model #{Version.model()}"
-      ],
+      ]
+      |> Enum.reject(&is_nil/1),
       " · "
     )
   end

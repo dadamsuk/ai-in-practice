@@ -35,6 +35,7 @@ defmodule AiInPractice.Eval.Summary do
     - Report after closing (ms): #{stats(s.latency.report_ms)}
     - Report rejections (each regenerated once): #{rejections(s.rejections)}
     - Questions: #{questions(s.questions)}
+    - Voice: #{voice(s[:voice])}
     """
   end
 
@@ -61,6 +62,13 @@ defmodule AiInPractice.Eval.Summary do
 
   defp rejections(map) when map_size(map) == 0, do: "none"
   defp rejections(map), do: Enum.map_join(map, ", ", fn {k, n} -> "#{k} (#{n})" end)
+
+  defp voice(nil), do: "n/a"
+  defp voice(%{second_person: 0, reports: r}), do: "no report of #{r} said \"you\" in shared text"
+
+  defp voice(v),
+    do:
+      "#{v.second_person} of #{v.reports} reports said \"you\" in shared text (#{Enum.join(v.fields, ", ")})"
 
   defp questions(%{runs: 0}), do: "n/a"
 

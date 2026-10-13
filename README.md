@@ -65,7 +65,10 @@ Set `FAKE_TRANSCRIBER=1` to offer voice in development with a fake transcriber, 
 ```sh
 mix eval.personas --fake                                  # free dry run
 OPENROUTER_API_KEY=... mix eval.personas --runs 3 --max-spend 2
+OPENROUTER_API_KEY=... mix eval.sample                    # a sample report from a fictional person
 ```
+
+`mix eval.sample` runs the fictional persona in `eval/samples/` once (about $0.02) and writes both reports as PDFs marked as a sample: "sample" in the header, on every page's foot, and in the assessor report's signed content, so the check page shows it too. Use it for showing what a report looks like, never a real session.
 
 ## The candidate journey
 

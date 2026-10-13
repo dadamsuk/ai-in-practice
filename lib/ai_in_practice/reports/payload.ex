@@ -13,6 +13,10 @@ defmodule AiInPractice.Reports.Payload do
   link id is left out too: the payload says what kind of link it was, not
   which.
 
+  A sample report (`sample: true` in the meta, #724) carries a `"sample"`
+  key saying so, so the check page shows it is fictional. Real reports have
+  no such key, so their payloads are unchanged.
+
   The payload holds strings, integers, booleans, `null`, lists and maps
   only, so it encodes canonically (`AiInPractice.Reports.Canonical`).
   """
@@ -29,7 +33,7 @@ defmodule AiInPractice.Reports.Payload do
   @doc "The signed payload of the assessor report."
   @spec assessor(Report.t(), Content.meta()) :: map()
   def assessor(%Report{} = report, meta) do
-    %{
+    payload = %{
       "format" => @format,
       "role_group" => Atom.to_string(meta.role_group),
       "role_group_name" => RoleGroups.name(meta.role_group),
@@ -65,5 +69,7 @@ defmodule AiInPractice.Reports.Payload do
           do: %{"question" => q.question, "listen_for" => q.listen_for}
         )
     }
+
+    if Map.get(meta, :sample), do: Map.put(payload, "sample", Content.sample()), else: payload
   end
 end

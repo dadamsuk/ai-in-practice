@@ -109,7 +109,10 @@ defmodule AiInPractice.Eval.CLI do
     end
   end
 
-  defp clients(flags) do
+  @doc false
+  # The engine, respondent and report clients for `flags`; shared with
+  # `AiInPractice.Eval.SampleCLI`.
+  def clients(flags) do
     if flags[:fake] do
       {:ok,
        %{engine: {Fake, questions: 5}, respondent: {FakeRespondent, []}, report: nil, models: %{}}}

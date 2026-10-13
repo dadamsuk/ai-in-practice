@@ -8,7 +8,7 @@ defmodule AiInPractice.Eval.Harness do
   cap is reached the remaining runs are skipped (`failure: :budget`).
   """
 
-  alias AiInPractice.Eval.{Consistency, Meter, Persona, Questions, Run}
+  alias AiInPractice.Eval.{Consistency, Meter, Persona, Questions, Run, Voice}
 
   @doc """
   Runs `personas`. Options:
@@ -146,6 +146,7 @@ defmodule AiInPractice.Eval.Harness do
         |> Enum.reject(&(&1.transcript == []))
         |> Enum.map(&Questions.measure(&1.transcript))
         |> Questions.aggregate(),
+      voice: completed |> Enum.map(& &1.report) |> Voice.aggregate(),
       rejections: rejections,
       calls: calls(records)
     }

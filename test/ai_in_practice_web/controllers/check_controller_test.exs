@@ -103,6 +103,16 @@ defmodule AiInPracticeWeb.CheckControllerTest do
       end
 
       for {_label, value} <- Content.header(meta_fixture()), do: assert(text =~ value)
+      refute text =~ Content.sample()
+    end
+
+    test "a sample report matches and says it is about a fictional person" do
+      pdf = PDF.render(:assessor, report_fixture(), meta_fixture(%{sample: true}))
+      html = pdf |> upload_pdf() |> html_response(200)
+
+      assert outcome(html) == "match"
+      text = html |> main_text() |> String.replace(~r/\s+/, " ")
+      assert text =~ "sample a fictional person, made up for illustration role group Finance"
     end
 
     test "a report signed with a retired key still matches" do
