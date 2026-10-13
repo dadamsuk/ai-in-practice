@@ -42,8 +42,10 @@ defmodule AiInPracticeWeb.Endpoint do
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: false
   plug AiInPracticeWeb.Plugs.RequestLogger
 
+  # CheckUpload reads the check page's PDF into memory; Plug's own
+  # multipart parser would write it to a temporary file (PRD §10).
   plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
+    parsers: [:urlencoded, AiInPracticeWeb.Plugs.CheckUpload, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 

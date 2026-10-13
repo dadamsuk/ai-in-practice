@@ -15,33 +15,6 @@ defmodule AiInPractice.SigningKeyCLITest do
     path
   end
 
-  # The PDF with its embedded envelope edited by `fun`, written back as a
-  # Flate stream (cross-reference offsets are not fixed: the reader does not
-  # use them).
-  defp edit_envelope(pdf, fun) do
-    {:ok, envelope} = PDF.attachment(pdf, Signing.attachment_name())
-    edited = fun.(envelope)
-    assert edited != envelope
-    data = :zlib.compress(edited)
-
-    [{at, len}, {length_at, length_len}] =
-      Regex.run(~r{<</Length (\d+)/Type/EmbeddedFile.*?>>\nstream\n}s, pdf, return: :index)
-
-    old_length = pdf |> binary_part(length_at, length_len) |> String.to_integer()
-
-    dict =
-      pdf |> binary_part(at, len) |> String.replace(~r{/Length \d+}, "/Length #{byte_size(data)}")
-
-    dict =
-      if dict =~ "/FlateDecode",
-        do: dict,
-        else: String.replace(dict, "/Type/EmbeddedFile", "/Type/EmbeddedFile/Filter/FlateDecode")
-
-    tail_at = at + len + old_length
-
-    binary_part(pdf, 0, at) <> dict <> data <> binary_part(pdf, tail_at, byte_size(pdf) - tail_at)
-  end
-
   test "new prints a key that parses, with its public key and id" do
     assert {:ok, out} = SigningKeyCLI.run(["new"])
     [_, private] = Regex.run(~r/^REPORT_SIGNING_KEY=(\S+)$/m, out)
@@ -93,6 +66,10 @@ defmodule AiInPractice.SigningKeyCLITest do
 
     assert SigningKeyCLI.run(["verify", write(dir, "a.pdf", edited)]) ==
              {:error, "the signed content is malformed"}
+  end
+
+  test "verify refuses a file that is not a PDF", %{tmp_dir: dir} do
+    assert SigningKeyCLI.run(["verify", write(dir, "a.txt", "hello")]) == {:error, "not a PDF"}
   end
 
   test "verify explains a candidate report, a missing file and bad arguments", %{tmp_dir: dir} do

@@ -1,0 +1,29 @@
+<Layouts.app flash={@flash}>
+  <h1 id="outcome" data-outcome={@reason}>This report could not be confirmed as unedited</h1>
+  <%= case @reason do %>
+    <% :bad_signature -> %>
+      <p class="lede">
+        The signed content inside this PDF does not match its signature, so it has been changed since AI in Practice wrote it.
+      </p>
+      <p>
+        Do not rely on it. Ask the person who sent it to download the assessor report again and send that copy as it is.
+      </p>
+    <% :unknown_key -> %>
+      <p class="lede">
+        This PDF was signed with a key AI in Practice has never published, so it cannot be confirmed as one of its reports.
+      </p>
+      <p>Do not rely on it. Ask the person who sent it for the original download.</p>
+    <% :malformed -> %>
+      <p class="lede">The signed content inside this PDF is damaged and cannot be read.</p>
+      <p>Ask the person who sent it for the original download.</p>
+    <% :no_signed_content -> %>
+      <p class="lede">This PDF carries no signed content.</p>
+      <p>
+        Only the assessor report is signed: the person's own report, titled "Your report", is not. A report that has been printed to a new PDF, or opened and saved again in another program, can also lose its signed content. Ask the person who sent it for the original download of the assessor report.
+      </p>
+  <% end %>
+  <p class="quiet">Nothing from this PDF has been kept.</p>
+  <p class="page-actions">
+    <.link href={~p"/check"}>Check another report</.link>
+  </p>
+</Layouts.app>

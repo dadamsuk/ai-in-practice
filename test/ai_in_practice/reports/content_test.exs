@@ -5,7 +5,7 @@ defmodule AiInPractice.Reports.ContentTest do
 
   alias AiInPractice.Assessment.Report
   alias AiInPractice.Reading
-  alias AiInPractice.Reports.Content
+  alias AiInPractice.Reports.{Content, Payload}
 
   defp headings(blocks), do: for({:h2, text} <- blocks, do: text)
 
@@ -117,5 +117,50 @@ defmodule AiInPractice.Reports.ContentTest do
 
     assert {"link", "individual"} in Content.header(meta_fixture(%{link_kind: :individual}))
     assert {"answers", "spoken"} in Content.header(meta_fixture(%{mode: :voice}))
+  end
+
+  describe "signed content (the check page)" do
+    # As the check page gets it: decoded from the signed JSON.
+    defp signed(report, meta \\ meta_fixture()),
+      do: report |> Payload.assessor(meta) |> Jason.encode!() |> Jason.decode!()
+
+    test "a signed payload lays out exactly as the assessor report it came from" do
+      report = report_fixture(["One answer.", "Another answer."])
+      assert Content.signed_blocks(signed(report)) == Content.assessor(report)
+
+      flagged = report_fixture(["One."], %{"manipulation_attempted" => true})
+      assert Content.signed_blocks(signed(flagged)) == Content.assessor(flagged)
+    end
+
+    test "the signed header matches the report's header" do
+      for meta <- [meta_fixture(), meta_fixture(%{link_kind: :individual, mode: :voice})] do
+        assert Content.signed_header(signed(report_fixture(), meta)) == Content.header(meta)
+      end
+    end
+
+    test "empty or missing parts are left out rather than shown blank" do
+      payload = %{
+        "statement" => Content.statement(),
+        "summary" => " ",
+        "date" => "not a date",
+        "areas" => [%{"name" => "Understanding", "quotes" => nil, "shortfall" => ""}],
+        "follow_up_questions" => [%{"question" => "Why?", "listen_for" => nil}]
+      }
+
+      blocks = Content.signed_blocks(payload)
+
+      assert blocks == [
+               {:statement, Content.statement()},
+               {:h2, "Summary"},
+               {:h2, "The five areas"},
+               {:h3, "Understanding"},
+               {:h2, "What to explore next"},
+               {:list, []},
+               {:h2, "Questions to ask in person"},
+               {:strong, "Why?"}
+             ]
+
+      assert {"date", "not a date"} in Content.signed_header(payload)
+    end
   end
 end

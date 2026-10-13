@@ -53,6 +53,15 @@ defmodule AiInPracticeWeb.Router do
     get "/signing-keys.json", SigningKeyController, :index
   end
 
+  # The check page: anyone can upload an assessor report and see its signed
+  # content, which is a report, so never cached or indexed.
+  scope "/", AiInPracticeWeb do
+    pipe_through [:browser, :private]
+
+    get "/check", CheckController, :new
+    post "/check", CheckController, :create
+  end
+
   # Every route here carries a link token in its path.
   scope "/", AiInPracticeWeb do
     pipe_through [:browser, :private]

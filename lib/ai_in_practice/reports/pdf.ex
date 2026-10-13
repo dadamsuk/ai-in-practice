@@ -60,7 +60,7 @@ defmodule AiInPractice.Reports.PDF do
       blocks: Enum.map(blocks, &block/1),
       signed: audience == :assessor,
       attachment: Signing.attachment_name(),
-      verify_at: AiInPracticeWeb.Endpoint.url() <> Signing.well_known_path()
+      check_at: AiInPracticeWeb.Endpoint.url() <> "/check"
     }
 
     opts = [

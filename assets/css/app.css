@@ -322,6 +322,22 @@ textarea {
   appearance: none;
 }
 
+/* The file picker's own button, drawn as a plain button: the browser's
+   default has rounded corners. */
+input[type="file"]::file-selector-button {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: calc(var(--unit) * 2);
+  padding: 0 var(--unit);
+  margin-right: var(--unit);
+  color: var(--ink);
+  background: var(--ground);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+}
+
 textarea {
   min-height: calc(var(--unit) * 10);
   resize: vertical;

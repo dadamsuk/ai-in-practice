@@ -11,7 +11,7 @@ defmodule AiInPractice.SigningKeyCLI do
       verify FILE  check the signature of an assessor report PDF
   """
 
-  alias AiInPractice.Reports.{PDF, Signing}
+  alias AiInPractice.Reports.{Check, Signing}
 
   @usage """
   usage:
@@ -48,11 +48,8 @@ defmodule AiInPractice.SigningKeyCLI do
 
   def run(["verify", path]) do
     with {:ok, pdf} <- read(path),
-         {:ok, envelope} <- envelope(pdf),
-         {:ok, payload} <- verify(envelope) do
-      {:ok,
-       "signature valid: key #{Jason.decode!(envelope)["kid"]}, " <>
-         "#{payload["role_group_name"]}, #{payload["date"]}\n"}
+         {:ok, %{payload: payload, kid: kid}} <- check(pdf) do
+      {:ok, "signature valid: key #{kid}, #{payload["role_group_name"]}, #{payload["date"]}\n"}
     end
   end
 
@@ -66,19 +63,26 @@ defmodule AiInPractice.SigningKeyCLI do
     end
   end
 
-  defp envelope(pdf) do
-    case PDF.attachment(pdf, Signing.attachment_name()) do
-      {:ok, envelope} -> {:ok, envelope}
-      :error -> {:error, "no signed content in this PDF: is it an assessor report?"}
-    end
-  end
+  # The same check as the public check page (`AiInPractice.Reports.Check`).
+  defp check(pdf) do
+    case Check.check(pdf) do
+      {:ok, result} ->
+        {:ok, result}
 
-  defp verify(envelope) do
-    case Signing.verify(envelope) do
-      {:ok, payload} -> {:ok, payload}
-      {:error, :unknown_key} -> {:error, "signed with a key this server does not know"}
-      {:error, :bad_signature} -> {:error, "signature does not match: the content was changed"}
-      {:error, :malformed} -> {:error, "the signed content is malformed"}
+      {:error, :not_pdf} ->
+        {:error, "not a PDF"}
+
+      {:error, :no_signed_content} ->
+        {:error, "no signed content in this PDF: is it an assessor report?"}
+
+      {:error, :unknown_key} ->
+        {:error, "signed with a key this server does not know"}
+
+      {:error, :bad_signature} ->
+        {:error, "signature does not match: the content was changed"}
+
+      {:error, :malformed} ->
+        {:error, "the signed content is malformed"}
     end
   end
 

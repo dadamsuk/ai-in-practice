@@ -127,6 +127,59 @@ defmodule AiInPractice.Reports.Content do
     ])
   end
 
+  @doc """
+  The header facts of a signed assessor payload (`AiInPractice.Reports.Payload`),
+  for the check page: the same facts as `header/1`, read from what was signed.
+  """
+  @spec signed_header(map()) :: [{String.t(), String.t()}]
+  def signed_header(payload) do
+    [
+      {"role group", payload["role_group_name"]},
+      {"date", signed_date(payload["date"])},
+      {"answers", payload["answers"]},
+      {"link", payload["link"]}
+    ]
+  end
+
+  defp signed_date(iso) do
+    case Date.from_iso8601(to_string(iso)) do
+      {:ok, date} -> Calendar.strftime(date, "%-d %B %Y")
+      _ -> to_string(iso)
+    end
+  end
+
+  @doc """
+  The blocks of a signed assessor payload, in the order `assessor/1` puts
+  them, so the check page shows the signed content laid out as the report is.
+  """
+  @spec signed_blocks(map()) :: [block()]
+  def signed_blocks(payload) do
+    List.flatten([
+      {:statement, payload["statement"]},
+      maybe(:strong, payload["manipulation_note"]),
+      {:h2, "Summary"},
+      maybe(:p, payload["summary"]),
+      maybe(:p, payload["overall"]),
+      {:h2, "The five areas"},
+      for area <- List.wrap(payload["areas"]) do
+        [
+          {:h3, area["name"]},
+          maybe(:p, area["description"]),
+          for(q <- List.wrap(area["quotes"]), do: {:quote, q}),
+          maybe_labelled("how sure this is", area["confidence_in_words"]),
+          maybe_labelled("a strong answer for this role would include", area["strong_answer"]),
+          maybe_labelled("where this one fell short", area["shortfall"])
+        ]
+      end,
+      {:h2, "What to explore next"},
+      {:list, List.wrap(payload["explore_next"])},
+      {:h2, "Questions to ask in person"},
+      for q <- List.wrap(payload["follow_up_questions"]) do
+        [maybe(:strong, q["question"]), maybe_labelled("listen for", q["listen_for"])]
+      end
+    ])
+  end
+
   defp reading([]), do: []
 
   defp reading(ids) do

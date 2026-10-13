@@ -1,0 +1,33 @@
+<Layouts.app flash={@flash}>
+  <h1 id="outcome" data-outcome="match">This report is genuine and unedited</h1>
+  <p class="lede">
+    The signed content below is exactly what AI in Practice wrote. Compare it with the PDF you were sent: anything that differs has been changed since.
+  </p>
+  <p id="what-it-means">
+    It does not say who took part. The identity of the person in the conversation is never checked.
+  </p>
+
+  <section id="signed-content" class="report">
+    <h2 class="report-title">Assessor report: the signed content</h2>
+    <.list>
+      <:item :for={{label, value} <- signed_header(@payload)} title={label}>
+        <span class="mono">{value}</span>
+      </:item>
+      <:item title="written with"><span class="mono">{versions(@payload)}</span></:item>
+      <:item title="signing key"><span class="mono">{@kid}</span></:item>
+    </.list>
+    <%= if known_format?(@payload) do %>
+      <.blocks blocks={signed_blocks(@payload)} />
+    <% else %>
+      <p>
+        This report was written in a newer layout than this page knows, so its signed content is shown as it was signed.
+      </p>
+      <pre class="mono" id="signed-raw">{raw_json(@payload)}</pre>
+    <% end %>
+  </section>
+
+  <p class="page-actions">
+    <.link href={~p"/check"}>Check another report</.link>
+  </p>
+  <p class="quiet">Nothing from this report has been kept.</p>
+</Layouts.app>

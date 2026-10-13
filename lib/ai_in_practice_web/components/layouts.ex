@@ -44,8 +44,8 @@ defmodule AiInPracticeWeb.Layouts do
   end
 
   @doc """
-  The running foot: versions in mono, lower case, then the privacy notice
-  and terms. Those open in a new tab, so following one from the middle of a
+  The running foot: versions in mono, lower case, then the privacy notice,
+  the terms and the check page. Those open in a new tab, so following one from the middle of a
   conversation does not end it.
   """
   attr :legal_links, :boolean, default: true
@@ -65,6 +65,7 @@ defmodule AiInPracticeWeb.Layouts do
       <span>model {@model}</span>
       <a :if={@legal_links} href={~p"/privacy"} target="_blank" rel="noopener">privacy</a>
       <a :if={@legal_links} href={~p"/terms"} target="_blank" rel="noopener">terms</a>
+      <a :if={@legal_links} href={~p"/check"} target="_blank" rel="noopener">check a report</a>
     </footer>
     """
   end

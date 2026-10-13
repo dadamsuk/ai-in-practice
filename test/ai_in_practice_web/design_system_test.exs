@@ -36,6 +36,7 @@ defmodule AiInPracticeWeb.DesignSystemTest do
       conn |> get(~p"/") |> html_response(200),
       build_conn() |> get(~p"/privacy") |> html_response(200),
       build_conn() |> get(~p"/terms") |> html_response(200),
+      build_conn() |> get(~p"/check") |> html_response(200),
       build_conn() |> get(~p"/r/#{r_token}") |> html_response(200),
       build_conn() |> get(~p"/a/#{c_token}") |> html_response(200),
       build_conn() |> get(~p"/a/#{Links.Token.generate()}") |> html_response(404),
@@ -107,6 +108,9 @@ defmodule AiInPracticeWeb.DesignSystemTest do
     end
 
     refute @css =~ "gradient("
+
+    # The browser's own file picker button is rounded unless told otherwise.
+    assert @css =~ ~r/::file-selector-button \{[^}]*border-radius: 0;/
   end
 
   test "nothing centred and no capitals" do
@@ -165,6 +169,26 @@ defmodule AiInPracticeWeb.DesignSystemTest do
       count = accents.(html)
       assert count in 1..2, "accent used #{count} times"
     end
+  end
+
+  test "the check page's form uses the accent once, and its answers do not use it", %{
+    conn: conn
+  } do
+    accents = &length(Regex.scan(~r/button-primary/, &1))
+    assert conn |> get(~p"/check") |> html_response(200) |> accents.() == 1
+
+    boundary = "designboundary"
+
+    body =
+      "--#{boundary}\r\ncontent-disposition: form-data; name=\"report\"; filename=\"r.pdf\"\r\n\r\n%PDF-1.7\r\n--#{boundary}--\r\n"
+
+    html =
+      build_conn()
+      |> put_req_header("content-type", "multipart/form-data; boundary=#{boundary}")
+      |> post(~p"/check", body)
+      |> html_response(200)
+
+    assert accents.(html) == 0
   end
 
   defp wait_for(view, selector) do

@@ -112,6 +112,6 @@
     read("signed.json", encoding: none),
     mime-type: "application/json",
     relationship: "source",
-    description: "The signed content of this report (Ed25519). Check it at " + data.verify_at,
+    description: "The signed content of this report (Ed25519). Check it at " + data.check_at,
   )
 }

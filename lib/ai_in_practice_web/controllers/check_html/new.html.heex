@@ -1,0 +1,46 @@
+<Layouts.app flash={@flash}>
+  <h1>Check an assessor report</h1>
+  <p class="lede">
+    Upload an assessor report to confirm that AI in Practice wrote it and that it has not been changed since.
+  </p>
+  <p id="how-it-works">
+    Every assessor report carries a signed copy of its content inside the PDF. This page checks the signature and shows you that signed content in full, so you can compare it with the pages you were sent. Anything that differs has been edited.
+  </p>
+
+  <form action={~p"/check"} method="post" enctype="multipart/form-data" id="check-form">
+    <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+    <div class="field">
+      <label class="field-label" for="report">the assessor report (pdf)</label>
+      <input
+        type="file"
+        id="report"
+        name="report"
+        accept=".pdf,application/pdf"
+        aria-invalid={@error && "true"}
+        aria-describedby={@error && "check-error"}
+      />
+      <p :if={@error} class="field-error" id="check-error" role="alert">
+        {error_message(@error)}
+      </p>
+    </div>
+    <div class="page-actions">
+      <.button type="submit" variant="primary">Check the report</.button>
+    </div>
+  </form>
+
+  <h2>What a match means</h2>
+  <p id="what-it-means">
+    A match means the report is genuine and unedited: it is what AI in Practice wrote at the end of one conversation. It says nothing about who took part. The identity of the person in the conversation is never checked, so the report is one input to your own judgement, never a decision on its own.
+  </p>
+
+  <h2>Nothing is kept</h2>
+  <p id="nothing-kept">
+    The PDF is read in memory to check it and discarded as soon as the answer is sent back. It is never saved, logged or stored.
+  </p>
+  <p class="quiet">
+    The keys that sign reports are published at <a
+      href="/.well-known/ai-in-practice/signing-keys.json"
+      class="mono"
+    >/.well-known/ai-in-practice/signing-keys.json</a>, for anyone who would rather check a report themselves.
+  </p>
+</Layouts.app>
