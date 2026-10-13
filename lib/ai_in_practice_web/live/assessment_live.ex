@@ -376,7 +376,13 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
     <h2>How your answers are handled</h2>
     <p id="data-handling">
-      Your answers and reports are held in this server's memory only while this page is open. They are never written to disk, to a database or to a log. To write the questions and the reports, your answers are sent to an AI model through OpenRouter, with zero data retention. When you close this page, they are gone.
+      Your answers and reports are held in this server's memory only while this page is open. They are never written to disk, to a database or to a log. On the way they pass through Cloudflare, which secures the connection to this site. To write the questions and the reports, your answers are sent through OpenRouter to the AI model's provider, with zero data retention. When you close this page, they are gone.
+    </p>
+    <p id="legal">
+      The <.link href={~p"/privacy"} target="_blank" rel="noopener">privacy notice</.link>
+      sets out exactly what is kept and what is not, and the
+      <.link href={~p"/terms"} target="_blank" rel="noopener">terms</.link>
+      explain why this is never an automated decision about you. Both open in a new tab.
     </p>
 
     <.form for={@role_form} id="begin-form" phx-submit="begin">

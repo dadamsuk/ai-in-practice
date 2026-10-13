@@ -113,6 +113,16 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
       assert html =~ "one attempt"
       assert html =~ "figures as ranges"
       assert view |> element("#data-handling") |> render() =~ "never written to disk"
+
+      for party <- ["Cloudflare", "OpenRouter", "the AI model&#39;s provider"] do
+        assert view |> element("#data-handling") |> render() =~ party
+      end
+
+      # The privacy notice and terms open in a new tab, so reading them
+      # cannot end a conversation.
+      assert has_element?(view, ~s(#legal a[href="/privacy"][target="_blank"]), "privacy notice")
+      assert has_element?(view, ~s(#legal a[href="/terms"][target="_blank"]), "terms")
+      assert has_element?(view, ~s(#running-foot a[href="/privacy"][target="_blank"]))
       refute has_element?(view, "select")
       refute html =~ ~r/interview|verified|score:/i
 

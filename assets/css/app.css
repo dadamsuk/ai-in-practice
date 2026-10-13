@@ -237,6 +237,10 @@ hr.rule {
   color: var(--ink-quiet);
 }
 
+.running-foot a {
+  color: inherit;
+}
+
 .page-header {
   margin-bottom: calc(var(--unit) * 2);
 }

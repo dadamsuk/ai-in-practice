@@ -1,0 +1,93 @@
+<Layouts.app flash={@flash}>
+  <h1>Privacy notice</h1>
+  <p class="mono quiet" id="updated">last updated {@updated}</p>
+  <p class="lede">
+    What AI in Practice keeps, what it never keeps, and who else handles your words on the way.
+  </p>
+
+  <h2>Who is responsible</h2>
+  <p>
+    DSC Ltd publishes AI in Practice and is the controller of the little personal data it holds. To ask about anything on this page, use the contact details at dsc.net.
+  </p>
+
+  <h2>What is never kept</h2>
+  <ul id="never-kept">
+    <li>Your answers, and the questions you were asked.</li>
+    <li>Both reports, on screen and as PDFs.</li>
+    <li>Your name, contact details or anything else that identifies you.</li>
+  </ul>
+  <p>
+    None of these is written to disk, to the database or to a log, at any point.
+  </p>
+
+  <h2>During the conversation</h2>
+  <p id="in-memory">
+    Your answers and reports are held only in the server's memory, in a process that belongs to your page. That process stops, and everything it held goes with it, when you close or reload the page, when the connection has been lost for two minutes, or an hour after your reports are ready, whichever comes first. The conversation itself stops at 40 minutes. Report PDFs are made in memory when you download them and are not stored.
+  </p>
+  <p>
+    Please leave out anything you would not want an AI model to read: names of clients and employers, figures you would rather give as ranges, and anything about your health or other sensitive matters.
+  </p>
+
+  <h2>What is kept</h2>
+  <p>The database holds link and usage data only:</p>
+  <ul id="kept">
+    <li>
+      a fingerprint (a one-way hash) of each link, never the link itself, its type, and whether it is unused, started or completed, with the times;
+    </li>
+    <li>the role group chosen for the conversation, and whether answers were typed or spoken;</li>
+    <li>
+      for a recruiter's link: the firm's name, a contact name and email address, entered by DSC, and how many links the firm may send;
+    </li>
+    <li>
+      for an individual link: a label DSC chooses, such as "IND-014". The name of the person it was sent to is kept in DSC's own business records, not here.
+    </li>
+  </ul>
+  <p>
+    A recruiter can see whether a link they sent has been started and completed, and nothing else. They see your assessor report only if you send it to them yourself. Any label a recruiter gives a link, such as your initials, stays in their own browser.
+  </p>
+  <p>
+    The server's logs record which page was asked for, with any link removed from the address, the response and how long it took. They do not record your IP address or anything you typed.
+  </p>
+
+  <h2>Who else handles your words</h2>
+  <dl class="list" id="third-parties">
+    <dt class="mono">cloudflare</dt>
+    <dd>
+      Cloudflare sits in front of this site and handles the secure connection, so your answers and reports pass through it in readable form on their way to and from the server. It sees your IP address, as any network provider does. It does not keep what you send, and DSC keeps its logging of request contents switched off.
+    </dd>
+    <dt class="mono">openrouter</dt>
+    <dd>
+      To write each question and the reports, the conversation so far is sent to OpenRouter, which passes it to the model's provider. Every request asks for zero data retention, so it may only go to a provider that does not keep it or use it for training.
+    </dd>
+    <dt class="mono">model provider</dt>
+    <dd>
+      The company that runs the AI model named in the footer of every page. It receives the conversation through OpenRouter on the same zero-retention terms.
+    </dd>
+  </dl>
+  <p>
+    OpenRouter and model providers may process data outside the UK, including in the United States. The server itself is DSC's, rented from a hosting company.
+  </p>
+  <p>
+    There is no analytics or tracking of any kind, and no page asks another site for anything: the fonts are served from this site. The only cookie is the one the site needs to keep a page and the server in step; it holds nothing about you and ends when you close the browser.
+  </p>
+
+  <h2>Voice</h2>
+  <p>
+    Spoken answers are not offered yet. When they are, the audio will go to DSC's transcription service, be turned into text for you to correct, and be discarded straight away.
+  </p>
+
+  <h2>Why we use it, and your rights</h2>
+  <p>
+    DSC uses your answers only to hold the conversation you chose to take part in and write your reports, and keeps the link data to run the links and see how much the framework is used. The legal basis is DSC's legitimate interest in offering the framework to the people it sends links to, weighed against the fact that nothing you say is kept. Because your answers and reports are gone when the session ends, there is nothing afterwards to give you a copy of, correct or delete. For the link data, you can ask DSC what is held and ask for it to be corrected or deleted. You can also complain to the Information Commissioner's Office (ico.org.uk).
+  </p>
+  <p>
+    No decision is made about you by this framework, automated or otherwise. See the <.link href={
+      ~p"/terms"
+    }>terms</.link>.
+  </p>
+
+  <h2>Check it yourself</h2>
+  <p>
+    The code and the rubric are public, at <span class="mono">github.com/dadamsuk/ai-in-practice</span>. The footer of every page shows the version of the code that is running, so you can match the live site to the repository and see that it does what this page says.
+  </p>
+</Layouts.app>

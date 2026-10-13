@@ -113,7 +113,7 @@ defmodule AiInPracticeWeb.Admin.LinksLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} section="admin">
+    <Layouts.app flash={@flash} section="admin" legal_links={false}>
       <nav class="mono admin-nav">
         <.link navigate={~p"/admin"}>links</.link>
         <.link navigate={~p"/admin/reading"}>reading list</.link>

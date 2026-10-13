@@ -22,6 +22,7 @@ defmodule AiInPracticeWeb.Layouts do
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :section, :string, default: nil, doc: "a mono label after the name, e.g. \"admin\""
+  attr :legal_links, :boolean, default: true, doc: "link the privacy notice and terms in the foot"
 
   slot :inner_block, required: true
 
@@ -38,11 +39,17 @@ defmodule AiInPracticeWeb.Layouts do
       {render_slot(@inner_block)}
     </main>
 
-    <.footer />
+    <.footer legal_links={@legal_links} />
     """
   end
 
-  @doc "The running foot: versions in mono, lower case."
+  @doc """
+  The running foot: versions in mono, lower case, then the privacy notice
+  and terms. Those open in a new tab, so following one from the middle of a
+  conversation does not end it.
+  """
+  attr :legal_links, :boolean, default: true
+
   def footer(assigns) do
     assigns =
       assign(assigns,
@@ -56,6 +63,8 @@ defmodule AiInPracticeWeb.Layouts do
       <span>code {@code}</span>
       <span>rubric v{@rubric}</span>
       <span>model {@model}</span>
+      <a :if={@legal_links} href={~p"/privacy"} target="_blank" rel="noopener">privacy</a>
+      <a :if={@legal_links} href={~p"/terms"} target="_blank" rel="noopener">terms</a>
     </footer>
     """
   end

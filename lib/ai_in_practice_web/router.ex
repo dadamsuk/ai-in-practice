@@ -42,6 +42,8 @@ defmodule AiInPracticeWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/privacy", PageController, :privacy
+    get "/terms", PageController, :terms
   end
 
   # The public keys that sign assessor reports, for anyone verifying one.

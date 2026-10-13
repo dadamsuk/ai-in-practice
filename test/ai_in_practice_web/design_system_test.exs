@@ -34,6 +34,8 @@ defmodule AiInPracticeWeb.DesignSystemTest do
 
     pages = [
       conn |> get(~p"/") |> html_response(200),
+      build_conn() |> get(~p"/privacy") |> html_response(200),
+      build_conn() |> get(~p"/terms") |> html_response(200),
       build_conn() |> get(~p"/r/#{r_token}") |> html_response(200),
       build_conn() |> get(~p"/a/#{c_token}") |> html_response(200),
       build_conn() |> get(~p"/a/#{Links.Token.generate()}") |> html_response(404),

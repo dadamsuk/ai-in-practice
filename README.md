@@ -28,6 +28,8 @@ This repository holds the whole application and the rubric it assesses against, 
 | Assessment pages and report downloads are never cached or indexed, and links do not leak through the `Referer` header. | `lib/ai_in_practice_web/plugs/security_headers.ex` |
 | No third-party requests: fonts are self-hosted and there is no analytics. | `priv/static/fonts`, `test/ai_in_practice_web/design_system_test.exs` |
 | Admin is reachable only over Tailscale, on a separate listener with its own router. | `lib/ai_in_practice_web/admin/`, `lib/ai_in_practice/admin_bind.ex`, `test/ai_in_practice_web/admin_endpoint_test.exs` |
+| The privacy notice and terms say the same as this table: what is kept and never kept, the third parties, and that the framework is a conversation starter, never an automated decision. They are linked from the start screen and every public footer, and open in a new tab so reading them cannot end a conversation. | `lib/ai_in_practice_web/controllers/page_html/privacy.html.heex`, `terms.html.heex` (at `/privacy` and `/terms`). Test: `test/ai_in_practice_web/controllers/legal_pages_test.exs` |
+| Candidate- and recruiter-facing copy never says "interview" or "verified", has no scores, pass marks or tests of the person, and no product language. | `test/support/vocabulary_guard.ex` scans every public template, `Reports.Content` and the report's Typst file. Test: `test/ai_in_practice_web/vocabulary_test.exs` |
 
 Third parties in the data path: Cloudflare (which fronts the site and terminates TLS), and OpenRouter and the underlying model provider (zero data retention).
 

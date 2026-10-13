@@ -1,0 +1,8 @@
+<%!-- A planted banned word for the vocabulary guard's own test. --%>
+<div id="failed" data-score={@score}>
+  <%= if @failed do %>
+    <h1>Your interview is ready</h1>
+  <% end %>
+  <p>{if @kind == :candidate, do: "Your score is below.", else: "Nothing to see."}</p>
+  <p>There are no scores, and no pass mark.</p>
+</div>
