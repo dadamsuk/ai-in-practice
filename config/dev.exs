@@ -17,7 +17,7 @@ config :ai_in_practice, AiInPracticeWeb.Endpoint,
   # Dev only: bound to all interfaces so BrowserHost on bigwhite can reach it
   # over Tailscale (http://dedev:4000). Production binds as runtime.exs says.
   http: [ip: {0, 0, 0, 0}],
-  check_origin: ["//localhost", "//127.0.0.1", "//dedev", "//100.88.155.65"],
+  check_origin: ["//localhost", "//127.0.0.1", "//dedev", "//intra", "//intra.halibut-liberty.ts.net", "//100.88.155.65"],
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "eTfkJojrItPKRUMnKmdBODRj2m6v6ss1tsE7eEYHbcP8nmPAJlQH7xd3cAvqFKNx",
@@ -30,7 +30,7 @@ config :ai_in_practice, AiInPracticeWeb.Endpoint,
 # Tailscale address) to reach it from another machine.
 config :ai_in_practice, AiInPracticeWeb.AdminEndpoint,
   http: [ip: {127, 0, 0, 1}, port: 4101],
-  check_origin: ["//localhost", "//127.0.0.1", "//dedev", "//100.88.155.65"],
+  check_origin: ["//localhost", "//127.0.0.1", "//dedev", "//intra", "//intra.halibut-liberty.ts.net", "//100.88.155.65"],
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "pY3n0nWQ5b8l7r7l1X0vRj9mJ2kq4eZc8yHf6tAa1sDd3gG5hJ7kK9lL0zZxXcCv"
