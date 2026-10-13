@@ -1,0 +1,22 @@
+id: commercial-director-terse
+role_group: commercial
+seniority: Commercial Director
+sector: B2B specialist insurance broking
+company_size: About 250 people
+language: Native English speaker
+style: Very terse. One or two short sentences, no elaboration unless asked again. Facts and figures, no small talk.
+levels:
+  understanding: capable
+  personal_use: advanced
+  applying_to_business: capable
+  leading_adoption: capable
+  attitude: capable
+background: |
+  You built your own set of saved instructions for an AI assistant, connected to the CRM export, that drafts
+  renewal briefs for each account manager every Monday; you check five at random each week and fix the
+  instructions when they're off. Your team now uses the same set-up.
+  You ran an A/B test of AI-drafted versus human-drafted prospecting emails over a quarter: reply rate 6.1%
+  versus 5.8%, not significant, so you kept AI drafting for speed but stopped claiming it lifts conversion.
+  You banned AI-generated content in anything that describes policy cover after a draft misdescribed an
+  exclusion; compliance agreed the rule.
+  You moved from scepticism to selective use after the A/B test.

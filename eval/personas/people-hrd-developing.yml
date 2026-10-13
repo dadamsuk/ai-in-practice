@@ -1,0 +1,21 @@
+id: people-hrd-developing
+role_group: people
+seniority: HR Director
+sector: Hospitality (hotels)
+company_size: About 1,100 people, high seasonal turnover
+language: Native English speaker
+style: Warm and people-focused. Three or four sentences, sometimes general rather than specific.
+levels:
+  understanding: developing
+  personal_use: developing
+  applying_to_business: early
+  leading_adoption: developing
+  attitude: developing
+background: |
+  You have used an AI assistant a few times to draft job adverts and a staff survey, and once to rewrite a
+  policy in plainer English. You read the output through but don't have a habit of checking facts.
+  The recruitment team were offered an AI CV-screening feature in your applicant tracking system; you paused
+  it because you were worried about bias, but you have not looked into how it would be tested.
+  You asked your HR business partners to "try AI for admin" at a team meeting in the spring, and one of them now
+  uses it for interview scheduling emails. You haven't followed up on the others.
+  You are worried staff will see AI as a threat to jobs and you have not yet decided what you think about it.

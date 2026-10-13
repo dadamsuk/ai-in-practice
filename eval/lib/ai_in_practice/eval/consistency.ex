@@ -15,7 +15,7 @@ defmodule AiInPractice.Eval.Consistency do
   substance but not in wording score well below it.
   """
 
-  alias AiInPractice.Eval.Persona
+  alias AiInPractice.Eval.{Persona, Questions}
   alias AiInPractice.Rubric
 
   @ranks %{early: 0, developing: 1, capable: 2, advanced: 3}
@@ -39,6 +39,9 @@ defmodule AiInPractice.Eval.Consistency do
       reports: length(reports),
       first_pass: Enum.count(results, &(&1.outcome == :report and &1[:report_calls] == 1)),
       failures: for(%{outcome: :failed, failure: f} <- results, do: f),
+      questions:
+        for(%{transcript: [_ | _] = t} <- results, do: Questions.measure(t))
+        |> Questions.aggregate(),
       areas: Enum.map(Rubric.areas(), &area(&1, persona.levels[&1], reports)),
       manipulation: %{
         expected: persona.expect_manipulation,

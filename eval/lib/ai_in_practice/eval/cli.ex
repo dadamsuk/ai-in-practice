@@ -10,7 +10,8 @@ defmodule AiInPractice.Eval.CLI do
     * `--runs N`: runs per persona (default 3)
     * `--only ID,ID`: just these personas
     * `--max-spend USD`: stop sending once this much is spent (default 2.00)
-    * `--max-calls N`: stop sending after this many model calls (default 400)
+    * `--max-calls N`: stop sending after this many model calls (default 2000;
+      a session makes about 30)
     * `--model ID`: the engine's model (default the release's)
     * `--report-model ID`: a different model for the report call only
     * `--respondent-model ID`: the persona's model (default the engine's)
@@ -143,7 +144,7 @@ defmodule AiInPractice.Eval.CLI do
         personas: length(personas),
         runs: Keyword.get(flags, :runs, 3),
         max_spend: Keyword.get(flags, :max_spend, 2.0),
-        max_calls: Keyword.get(flags, :max_calls, 400)
+        max_calls: Keyword.get(flags, :max_calls, 2000)
       },
       clients.models
     )

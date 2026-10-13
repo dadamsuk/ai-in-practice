@@ -8,7 +8,7 @@ defmodule AiInPractice.Eval.Harness do
   cap is reached the remaining runs are skipped (`failure: :budget`).
   """
 
-  alias AiInPractice.Eval.{Consistency, Meter, Persona, Run}
+  alias AiInPractice.Eval.{Consistency, Meter, Persona, Questions, Run}
 
   @doc """
   Runs `personas`. Options:
@@ -27,6 +27,14 @@ defmodule AiInPractice.Eval.Harness do
     runs = Keyword.get(opts, :runs, 3)
     on_result = Keyword.get(opts, :on_result, fn _ -> :ok end)
     jobs = for p <- personas, n <- 1..runs, do: {p, n}
+    handler = {__MODULE__, meter}
+
+    :telemetry.attach(
+      handler,
+      [:ai_in_practice, :report, :rejected],
+      &__MODULE__.handle_rejection/4,
+      meter
+    )
 
     results =
       jobs
@@ -40,9 +48,26 @@ defmodule AiInPractice.Eval.Harness do
         result
       end)
 
-    summary = summarise(personas, results, Meter.records(meter), Meter.totals(meter))
+    :telemetry.detach(handler)
+
+    summary =
+      summarise(
+        personas,
+        results,
+        Meter.records(meter),
+        Meter.totals(meter),
+        Meter.rejections(meter)
+      )
+
     Agent.stop(meter)
     summary
+  end
+
+  # Telemetry handlers are global: while two harness runs overlap (only in
+  # tests), each counts the other's rejections too.
+  @doc false
+  def handle_rejection(_event, _measurements, %{problems: problems}, meter) do
+    if Process.alive?(meter), do: Meter.note_rejection(meter, problems)
   end
 
   defp run_one({persona, n}, meter, opts) do
@@ -87,8 +112,8 @@ defmodule AiInPractice.Eval.Harness do
   end
 
   @doc "The summary of a set of results, with the meter's records and totals."
-  @spec summarise([Persona.t()], [map()], [Meter.call_record()], map()) :: map()
-  def summarise(personas, results, records, totals) do
+  @spec summarise([Persona.t()], [map()], [Meter.call_record()], map(), map()) :: map()
+  def summarise(personas, results, records, totals, rejections \\ %{}) do
     by_persona = Enum.group_by(results, & &1.persona)
     summaries = Enum.map(personas, &Consistency.summarise(&1, Map.get(by_persona, &1.id, [])))
     by_id = Map.new(summaries, &{&1.persona, &1})
@@ -100,6 +125,8 @@ defmodule AiInPractice.Eval.Harness do
         for(
           p <- personas,
           p.pair,
+          # With --only, the partner may not be in this run.
+          Map.has_key?(by_id, p.pair),
           p.id < p.pair or not Enum.any?(personas, &(&1.id == p.pair and &1.pair == p.id)),
           do: Consistency.compare(by_id[p.id], by_id[p.pair])
         ),
@@ -114,6 +141,12 @@ defmodule AiInPractice.Eval.Harness do
         report_ms: completed |> Enum.map(& &1.report_ms) |> Enum.reject(&is_nil/1) |> stats()
       },
       cost_per_report: completed |> Enum.map(& &1.cost) |> Consistency.mean(),
+      questions:
+        results
+        |> Enum.reject(&(&1.transcript == []))
+        |> Enum.map(&Questions.measure(&1.transcript))
+        |> Questions.aggregate(),
+      rejections: rejections,
       calls: calls(records)
     }
   end

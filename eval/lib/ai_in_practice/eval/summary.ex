@@ -33,6 +33,8 @@ defmodule AiInPractice.Eval.Summary do
     - Cost per completed session: #{if s.cost_per_report, do: "$" <> money(s.cost_per_report), else: "n/a"}
     - Next question (ms): #{stats(s.latency.question_ms)}
     - Report after closing (ms): #{stats(s.latency.report_ms)}
+    - Report rejections (each regenerated once): #{rejections(s.rejections)}
+    - Questions: #{questions(s.questions)}
     """
   end
 
@@ -41,6 +43,8 @@ defmodule AiInPractice.Eval.Summary do
     ### #{p.persona} (#{p.role_group})
 
     Reports #{p.reports}/#{p.runs}, first-attempt valid #{p.first_pass}#{failures(p.failures)}#{manipulation(p.manipulation)}
+
+    Questions: #{questions(p.questions)}
 
     | Area | True | Levels by run | Spread | Bias | Description overlap |
     |---|---|---|---|---|---|
@@ -54,6 +58,20 @@ defmodule AiInPractice.Eval.Summary do
 
     header <> rows <> "\n"
   end
+
+  defp rejections(map) when map_size(map) == 0, do: "none"
+  defp rejections(map), do: Enum.map_join(map, ", ", fn {k, n} -> "#{k} (#{n})" end)
+
+  defp questions(%{runs: 0}), do: "n/a"
+
+  defp questions(q) do
+    "#{num(q.questions_per_run)} per run, #{q.follow_ups} follow-ups " <>
+      "(#{q.consecutive_follow_ups} back to back), #{pct(q.grounded)} build on earlier answers, " <>
+      "#{q.near_script} near-verbatim guidance questions, #{q.level_leaks} naming a level or score"
+  end
+
+  defp pct(nil), do: "n/a"
+  defp pct(x), do: "#{round(x * 100)}%"
 
   defp failures([]), do: ""
   defp failures(list), do: "; failed: #{list |> Enum.frequencies() |> inspect()}"

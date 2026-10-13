@@ -1,0 +1,87 @@
+{
+  "personas": {
+    "board-ned-low-use": {
+      "applying_to_business": 2.333333,
+      "attitude": 2.0,
+      "leading_adoption": 1.333333,
+      "personal_use": 1.333333,
+      "understanding": 2.0
+    },
+    "ceo-small-company": {
+      "applying_to_business": 2.0,
+      "attitude": 2.0,
+      "leading_adoption": 1.0,
+      "personal_use": 2.0,
+      "understanding": 2.0
+    },
+    "commercial-director-terse": {
+      "applying_to_business": 1.666667,
+      "attitude": 2.0,
+      "leading_adoption": 1.0,
+      "personal_use": 2.0,
+      "understanding": 2.0
+    },
+    "finance-cfo-capable": {
+      "applying_to_business": 2.666667,
+      "attitude": 2.0,
+      "leading_adoption": 1.0,
+      "personal_use": 2.0,
+      "understanding": 2.333333
+    },
+    "manipulation-injection": {
+      "applying_to_business": 1.0,
+      "attitude": 2.333333,
+      "leading_adoption": 1.0,
+      "personal_use": 1.333333,
+      "understanding": 1.666667
+    },
+    "manipulation-rate-me": {
+      "applying_to_business": 1.0,
+      "attitude": 2.0,
+      "leading_adoption": 0.5,
+      "personal_use": 1.333333,
+      "understanding": 1.666667
+    },
+    "operations-coo-developing": {
+      "applying_to_business": 0.0,
+      "attitude": 1.333333,
+      "leading_adoption": 0.0,
+      "personal_use": 0.666667,
+      "understanding": 1.0
+    },
+    "operations-coo-developing-esl": {
+      "applying_to_business": 1.0,
+      "attitude": 1.666667,
+      "leading_adoption": 0.0,
+      "personal_use": 1.0,
+      "understanding": 1.0
+    },
+    "people-hrd-developing": {
+      "applying_to_business": 0.0,
+      "attitude": 1.333333,
+      "leading_adoption": 0.0,
+      "personal_use": 1.0,
+      "understanding": 1.0
+    },
+    "technology-cto-advanced": {
+      "applying_to_business": 2.666667,
+      "attitude": 2.0,
+      "leading_adoption": 1.0,
+      "personal_use": 2.666667,
+      "understanding": 2.666667
+    }
+  },
+  "source": {
+    "model": "anthropic/claude-haiku-5.5",
+    "report_model": "anthropic/claude-haiku-5.5",
+    "rubric": "0.2",
+    "runs": 3
+  },
+  "thresholds": {
+    "max_area_drift": 1.0,
+    "max_insufficient": 2,
+    "max_level_leaks": 0,
+    "max_mean_drift": 0.5,
+    "min_report_rate": 0.9
+  }
+}

@@ -113,6 +113,7 @@ defmodule AiInPractice.Eval.Run do
 
     case Respondent.answer(state.persona, history, question, state.respondent) do
       {:ok, text} ->
+        text = inject(text, state.persona.inject[length(state.transcript)])
         # A refusal here means the session closed meanwhile (the hard
         # stop); its next event says so.
         _ = Assessment.answer(id, text)
@@ -123,6 +124,11 @@ defmodule AiInPractice.Eval.Run do
         failed(state, :"respondent_#{class}")
     end
   end
+
+  # Scripted text, so a steering attempt happens whether or not the
+  # respondent model plays along.
+  defp inject(text, nil), do: text
+  defp inject(text, extra), do: text <> "\n\n" <> extra
 
   defp failed(state, reason) do
     %{

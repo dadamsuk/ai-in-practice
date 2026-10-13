@@ -1,0 +1,25 @@
+id: ceo-small-company
+role_group: ceo_gm
+seniority: Founder and managing director
+sector: Architecture practice
+company_size: 12 people, one office
+language: Native English speaker
+style: Friendly and practical. Three or four sentences, often mentions cost or time.
+levels:
+  understanding: capable
+  personal_use: capable
+  applying_to_business: capable
+  leading_adoption: capable
+  attitude: capable
+background: |
+  There is no IT team; you decide and pay for every tool yourself, and budget is tight. You use an AI
+  assistant weekly to draft fee proposals from your own past proposals, which you paste in, and you
+  always re-check the fee arithmetic by hand after it once added a stage twice.
+  This year you paid for an AI image tool for early-stage concept visuals. After two months you measured it:
+  it saved roughly a day per competition entry, but clients misread the images as final designs, so you
+  now use it only internally and label everything "concept only".
+  You set a simple practice rule for all 12 staff: no client drawings or personal data go into public AI
+  tools, and anyone who finds a useful use shows it at the Friday lunch. Two of the three junior architects
+  now use it for planning-statement first drafts; you check a sample each month.
+  You can't afford pilots that fail expensively, so you try things one at a time with a clear "keep or drop"
+  date. You dropped an AI meeting-notes tool after a month because it mis-attributed decisions.

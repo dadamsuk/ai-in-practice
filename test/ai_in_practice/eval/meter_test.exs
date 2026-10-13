@@ -92,6 +92,19 @@ defmodule AiInPractice.Eval.MeterTest do
     assert Enum.count(results, &(&1 == {:error, :spend_refused})) == 15
   end
 
+  test "note_rejection/2 counts each problem by rule and path" do
+    {:ok, meter} = Meter.start_link()
+    assert Meter.rejections(meter) == %{}
+
+    Meter.note_rejection(meter, [{:missing, "main_gap"}, {:level_or_score, "summary"}])
+    Meter.note_rejection(meter, [{:missing, "main_gap"}])
+
+    assert Meter.rejections(meter) == %{
+             "missing at main_gap" => 2,
+             "level_or_score at summary" => 1
+           }
+  end
+
   test "report calls can go to a different client" do
     {:ok, meter} = Meter.start_link()
     {main, main_script} = LLMScript.client([])

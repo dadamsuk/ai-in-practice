@@ -9,7 +9,7 @@ mix eval.personas --only finance-cfo-capable --runs 1      # one persona once
 mix eval.personas --report-model anthropic/claude-sonnet-5.5   # try another model for the report call only
 ```
 
-Options: `--runs N`, `--only ID,ID`, `--max-spend USD` (default 2.00), `--max-calls N` (default 400), `--model`, `--report-model`, `--respondent-model`, `--concurrency N` (default 3), `--out DIR`.
+Options: `--runs N`, `--only ID,ID`, `--max-spend USD` (default 2.00), `--max-calls N` (default 2000; a session makes about 30 calls), `--model`, `--report-model`, `--respondent-model`, `--concurrency N` (default 3), `--out DIR`.
 
 ## Budget
 
@@ -24,6 +24,24 @@ Results go to `~/ai-in-practice-eval/<UTC timestamp>/` (or `--out`, which must b
 
 These are synthetic people, but the files still never go in the repository, the database or the logs.
 
+## The release gate
+
+`mix eval.gate` (and the manual `eval` workflow in GitHub Actions) runs the personas named in `baseline.json` once each and checks the summary against that baseline:
+
+- reports written for at least `min_report_rate` (0.9) of runs. Runs that failed on the harness's side (the simulated person's model, the budget) are left out of the count.
+- no area's mean level more than `max_area_drift` (1.0 level) from the baseline, and a mean drift of no more than `max_mean_drift` (0.5)
+- at most `max_insufficient` (2) areas with only "insufficient evidence"
+- the manipulation note on every report for a persona that steers, and on no other
+- no question naming a level or a score, and no back-to-back follow-ups
+
+```sh
+mix eval.gate                                   # run and check (about $0.20)
+mix eval.gate --summary DIR/summary.json        # check a run already made
+mix eval.gate --write-baseline DIR/summary.json # reset the baseline from a full run
+```
+
+Reset the baseline only from a full run (three runs per persona), and only after a deliberate change to the rubric or the prompts, in the same commit.
+
 ## Writing a persona
 
-See the moduledoc of `AiInPractice.Eval.Persona` for every field. The `background` is the evidence: write what this person has actually done, specific enough to support the `levels` you give them. The respondent hears each level only as plain guidance on how much first-hand experience to show, never the rubric's level names. Use `pair:` to name a persona that should read the same (for example, the same evidence told by a non-native English speaker). Use `behaviour:` and `expect: {manipulation: true}` for personas that try to steer the assessment.
+See the moduledoc of `AiInPractice.Eval.Persona` for every field. The `background` is the evidence: write what this person has actually done, specific enough to support the `levels` you give them. The respondent hears each level only as plain guidance on how much first-hand experience to show, never the rubric's level names. Use `pair:` to name a persona that should read the same (for example, the same evidence told by a non-native English speaker). For personas that try to steer the assessment, use `inject:` to add the attempt word for word at a given question, together with `expect: {manipulation: true}`. A respondent model asked through `behaviour:` alone often declines to do it.

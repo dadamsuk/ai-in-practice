@@ -39,12 +39,13 @@ Every card:
 2. `mix ci` is green (the same gates as `.github/workflows/ci.yml`).
 3. Pushed to `main`, and CI is green on GitHub.
 4. The card says which tests were added.
+5. Any change to the rubric or the prompts (`priv/rubric/rubric.md`, `lib/ai_in_practice/assessment/*_prompt.ex`) needs a green `mix eval.gate` run (see `eval/README.md`), recorded on the card.
 
 **Any card that changes a screen**, in addition:
 
-5. A BrowserHost walk-through of the changed screens from David's desktop (`bigwhite`), using `script/browser-check`: the happy path **and at least one error state**.
-6. Check the design rules by eye in the screenshot: the fonts load, nothing is centred, no rounded corners, the accent is used at most twice.
-7. Summarise the steps on the card with a screenshot or a snapshot excerpt.
+6. A BrowserHost walk-through of the changed screens from David's desktop (`bigwhite`), using `script/browser-check`: the happy path **and at least one error state**.
+7. Check the design rules by eye in the screenshot: the fonts load, nothing is centred, no rounded corners, the accent is used at most twice.
+8. Summarise the steps on the card with a screenshot or a snapshot excerpt.
 
 ### Browser checks
 

@@ -1,0 +1,56 @@
+# The evaluation gate before a release (#730). It runs the gate personas
+# (eval/baseline.json) once each against the real model and fails if the
+# validation pass rate drops, if internal levels drift from the baseline,
+# or if the manipulation note goes missing. It costs real inference (about
+# $0.20 a run), so it runs on demand, never on push. Any change to the
+# rubric or the prompts needs a green run here before release.
+name: eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_spend:
+        description: "Spend cap for the run, in US dollars"
+        default: "1.00"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: persona gate
+    runs-on: ubuntu-24.04
+    env:
+      # The harness is compiled in dev and test only, and test stubs OpenRouter.
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-dev-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-dev-
+      - run: mix deps.get
+      - name: Database (the reading list, empty here)
+        run: mix ecto.create && mix ecto.migrate
+      - name: Persona gate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MAX_SPEND: ${{ inputs.max_spend }}
+        run: mix eval.gate --out "$RUNNER_TEMP/eval" --max-spend "$MAX_SPEND"
+      # Synthetic personas' transcripts and reports: an artifact only, never committed.
+      - name: Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ github.sha }}
+          path: ${{ runner.temp }}/eval
+          if-no-files-found: ignore
+          retention-days: 14

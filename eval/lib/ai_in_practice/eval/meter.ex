@@ -21,13 +21,14 @@ defmodule AiInPractice.Eval.Meter do
 
   @behaviour AiInPractice.LLM
 
-  defstruct max_calls: 600,
+  defstruct max_calls: 2000,
             max_cost: 2.0,
             fallback_usd_per_mtok: 10.0,
             calls: 0,
             cost: 0.0,
             tripped: false,
-            records: []
+            records: [],
+            rejections: %{}
 
   @type call_record :: %{
           tag: term(),
@@ -108,6 +109,26 @@ defmodule AiInPractice.Eval.Meter do
 
   defp cost(%{cost: cost}, _tokens, _m) when is_number(cost), do: cost / 1
   defp cost(_usage, tokens, m), do: tokens * m.fallback_usd_per_mtok / 1_000_000
+
+  @doc """
+  Counts a report rejection (`AiInPractice.Assessment.Report` telemetry)
+  by `"rule at path"`.
+  """
+  @spec note_rejection(pid(), [{atom(), String.t()}]) :: :ok
+  def note_rejection(meter, problems) do
+    Agent.update(meter, fn m ->
+      rejections =
+        Enum.reduce(problems, m.rejections, fn {rule, path}, acc ->
+          Map.update(acc, "#{rule} at #{path}", 1, &(&1 + 1))
+        end)
+
+      %{m | rejections: rejections}
+    end)
+  end
+
+  @doc "Report rejections so far, by rule and path."
+  @spec rejections(pid()) :: %{String.t() => pos_integer()}
+  def rejections(meter), do: Agent.get(meter, & &1.rejections)
 
   @doc "Every request so far, oldest first."
   @spec records(pid()) :: [call_record()]

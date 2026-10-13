@@ -63,6 +63,11 @@ defmodule AiInPractice.Eval.HarnessTest do
     assert markdown =~ "### a (people)"
     assert markdown =~ "| Personal use | developing | developing, developing | 0 | 0.00 | 1.00 |"
     assert markdown =~ "| report | 4 | none |"
+    assert markdown =~ "Report rejections (each regenerated once): none"
+    assert markdown =~ "Questions: 3.00 per run, 0 follow-ups (0 back to back)"
+
+    assert %{runs: 4, questions: 12, follow_ups: 0, consecutive_follow_ups: 0} = s.questions
+    assert %{runs: 2, questions: 6} = hd(s.personas).questions
   end
 
   test "the budget cap stops sending; runs after it are skipped" do
@@ -90,6 +95,11 @@ defmodule AiInPractice.Eval.HarnessTest do
     assert Enum.map(s.pairs, & &1.personas) == [{"a", "b"}, {"c", "a"}]
     assert Enum.all?(hd(s.pairs).areas, &(&1.shift == 0.0))
     assert Summary.markdown(s, %{}) =~ "### a vs b"
+  end
+
+  test "a pair whose partner is not in this run is left out" do
+    s = harness([persona("a", pair: "elsewhere")], runs: 1)
+    assert s.pairs == []
   end
 
   test "a report sent to a separate client is counted under report" do
