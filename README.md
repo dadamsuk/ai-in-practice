@@ -190,7 +190,7 @@ Every push and pull request to `main` runs [`.github/workflows/ci.yml`](.github/
 
 **Before tagging a release**, run the evaluation gate: Actions → `eval` → Run workflow ([`.github/workflows/eval.yml`](.github/workflows/eval.yml), which needs the `OPENROUTER_API_KEY` repository secret), or `mix eval.gate` locally. It runs ten fixed personas once each against the real model (about $0.20) and fails if reports stop validating, if internal levels drift from [`eval/baseline.json`](eval/baseline.json), if the manipulation note goes missing, or if a question names a level. **Any change to the rubric or the prompts needs a green gate run before release.** After a deliberate change that moves levels, rerun the full persona set and reset the baseline (`mix eval.gate --write-baseline <summary.json>`) in the same commit as the change.
 
-Deploy by SHA tag, then run the post-deploy check against the live site:
+The server follows `:main`: its compose file has `pull_policy: always`, so `docker compose up -d` on the server pulls the latest green `main` and starts it. To pin or roll back, set `TAG` in the server's `.env` to a full SHA; remove it to follow `main` again. After a deploy, run the post-deploy check against the live site:
 
 ```sh
 script/smoke https://ai-in-practice.dsc.net <sha> http://<server public IP>:4001/admin
