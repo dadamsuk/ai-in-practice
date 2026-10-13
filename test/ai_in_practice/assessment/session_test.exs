@@ -282,7 +282,8 @@ defmodule AiInPractice.Assessment.SessionTest do
     end
 
     test "a failure mid-conversation ends the session" do
-      {id, _} = start!([LLMScript.turn("Q1"), {:error, :rate_limited}])
+      # LLM.complete retries a rate limit three times before giving up.
+      {id, _} = start!([LLMScript.turn("Q1") | List.duplicate({:error, :rate_limited}, 4)])
       assert_event(id, {:question, _})
       capture_log(fn -> :ok = Assessment.answer(id, "One.") end)
       assert_event(id, {:failed, :rate_limited})

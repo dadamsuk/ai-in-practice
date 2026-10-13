@@ -181,7 +181,6 @@ defmodule AiInPractice.LLM.OpenRouterTest do
              }
            }, :spend_refused},
           {403, %{"error" => %{"code" => 403, "message" => "flagged by moderation"}}, :fatal},
-          {429, %{"error" => %{"code" => 429}}, :rate_limited},
           {400, %{"error" => %{"code" => 400}}, :fatal},
           {401, %{"error" => %{"code" => 401}}, :fatal},
           {404, "not json", :fatal}
@@ -203,6 +202,21 @@ defmodule AiInPractice.LLM.OpenRouterTest do
 
         capture_log(fn -> assert {:error, :transient} = LLM.complete(request(), @client) end)
       end
+    end
+
+    test "429 is rate_limited and retried on its own budget until the attempts run out" do
+      Req.Test.expect(OpenRouter, 4, fn conn ->
+        reply(conn, 429, %{"error" => %{"code" => 429}})
+      end)
+
+      capture_log(fn -> assert {:error, :rate_limited} = LLM.complete(request(), @client) end)
+    end
+
+    test "a 429 followed by a good reply succeeds" do
+      Req.Test.expect(OpenRouter, fn conn -> reply(conn, 429, %{"error" => %{"code" => 429}}) end)
+      Req.Test.expect(OpenRouter, fn conn -> reply(conn, 200, ok_body("ok")) end)
+
+      capture_log(fn -> assert {:ok, %{content: "ok"}} = LLM.complete(request(), @client) end)
     end
 
     test "a 200 carrying an error object is classified by its code" do
