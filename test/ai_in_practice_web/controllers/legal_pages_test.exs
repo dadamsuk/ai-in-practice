@@ -58,6 +58,26 @@ defmodule AiInPracticeWeb.LegalPagesTest do
       assert html =~ "legitimate interest"
     end
 
+    test "says how spoken answers are handled, and who transcribes them", %{conn: conn} do
+      html = conn |> get(~p"/privacy") |> html_response(200)
+
+      assert section(html, "never-kept") =~ "Recordings of your voice"
+
+      voice = section(html, "voice")
+      assert voice =~ "discarded straight away"
+      assert voice =~ "never written to disk, to the database or to a log"
+      assert voice =~ "correct"
+      assert voice =~ "never spoken"
+      assert voice =~ "typed or spoken"
+      assert voice =~ "transcription mistakes never count against you"
+      refute voice =~ "not offered yet"
+
+      parties = section(html, "third-parties")
+      assert parties =~ "transcription"
+      assert parties =~ "no other company receives the recording"
+      assert parties =~ "keeps neither the recording nor the text"
+    end
+
     test "is public, needs no token and links to the terms", %{conn: conn} do
       conn = get(conn, ~p"/privacy")
 

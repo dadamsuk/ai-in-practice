@@ -120,10 +120,13 @@ defmodule AiInPracticeWeb.DesignSystemTest do
     refute @css =~ ~r/text-transform:\s*(uppercase|capitalize)/
   end
 
-  test "the accent is used only by the primary button" do
+  test "the accent is used only by the primary button and the recording indicator" do
     uses = Regex.scan(~r/var\(--accent\)/, @css)
-    assert length(uses) == 2
+    assert length(uses) == 3
     assert @css =~ ~r/\.button-primary \{[^}]*var\(--accent\)[^}]*var\(--accent\)/
+    # Never on small type: the indicator is full size and bold.
+    assert @css =~
+             ~r/\.recording \{[^}]*font-size: 18px;[^}]*font-weight: 600;[^}]*var\(--accent\)/
   end
 
   test "rules: 3px ink for structure, 2px hairline for separators" do

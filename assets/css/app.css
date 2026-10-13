@@ -491,6 +491,21 @@ textarea {
   outline: none;
 }
 
+/* The record and stop controls, above the answer box. */
+.voice {
+  margin-bottom: calc(var(--unit) * 2);
+  max-width: var(--measure);
+}
+
+/* While a spoken answer is being recorded: the one thing on the screen
+   that matters, so it takes the accent, in full-size type. */
+.recording {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: var(--unit) 0;
+}
+
 /* A quiet progress rule: five band segments, filled in ink. */
 .progress {
   display: flex;

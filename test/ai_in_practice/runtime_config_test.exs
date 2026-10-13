@@ -6,7 +6,9 @@ defmodule AiInPractice.RuntimeConfigTest do
   alias AiInPractice.AdminBind
 
   @vars ~w(ADMIN_IP ADMIN_PORT ADMIN_HOST DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PUBLIC_IP
-           PHX_SERVER FAKE_LLM OPENROUTER_API_KEY REPORT_SIGNING_KEY REPORT_SIGNING_RETIRED_KEYS)
+           PHX_SERVER FAKE_LLM OPENROUTER_API_KEY REPORT_SIGNING_KEY REPORT_SIGNING_RETIRED_KEYS
+           TRANSCRIPTION_SERVICE_URL TRANSCRIPTION_SERVICE_KEY TRANSCRIPTION_SERVICE_MODEL
+           FAKE_TRANSCRIBER)
 
   setup do
     saved = Map.new(@vars, &{&1, System.get_env(&1)})
@@ -203,6 +205,62 @@ defmodule AiInPractice.RuntimeConfigTest do
       System.put_env("FAKE_LLM", "1")
       System.put_env("ADMIN_IP", "100.88.155.65")
       refute read_prod()[:ai_in_practice][:llm]
+    end
+  end
+
+  describe "TRANSCRIPTION_SERVICE_URL and _KEY" do
+    setup do
+      System.put_env("ADMIN_IP", "100.88.155.65")
+      :ok
+    end
+
+    test "with both, production uses the engine's client with the local model" do
+      System.put_env("TRANSCRIPTION_SERVICE_URL", "http://bigwhite:8765")
+      System.put_env("TRANSCRIPTION_SERVICE_KEY", "mk-test")
+      config = read_prod()[:ai_in_practice]
+
+      assert config[:transcriber] == {AiInPractice.Transcriber.Manuel, model: "parakeet"}
+      assert config[:transcription_service] == [url: "http://bigwhite:8765", api_key: "mk-test"]
+    end
+
+    test "TRANSCRIPTION_SERVICE_MODEL names another model" do
+      System.put_env("TRANSCRIPTION_SERVICE_URL", "http://bigwhite:8765")
+      System.put_env("TRANSCRIPTION_SERVICE_KEY", "mk-test")
+      System.put_env("TRANSCRIPTION_SERVICE_MODEL", "whisper/large-v3-turbo")
+
+      assert read_prod()[:ai_in_practice][:transcriber] ==
+               {AiInPractice.Transcriber.Manuel, model: "whisper/large-v3-turbo"}
+    end
+
+    test "without either, or with an empty one, voice stays off and boot goes on" do
+      refute read_prod()[:ai_in_practice][:transcriber]
+
+      System.put_env("TRANSCRIPTION_SERVICE_URL", "http://bigwhite:8765")
+      refute read_prod()[:ai_in_practice][:transcriber]
+
+      System.put_env("TRANSCRIPTION_SERVICE_KEY", "")
+      refute read_prod()[:ai_in_practice][:transcriber]
+    end
+  end
+
+  describe "FAKE_TRANSCRIBER" do
+    test "in dev, 1 selects the fake transcriber and the error modes configure it" do
+      System.put_env("FAKE_TRANSCRIBER", "1")
+      assert read_dev()[:ai_in_practice][:transcriber] == {AiInPractice.Transcriber.Fake, []}
+
+      System.put_env("FAKE_TRANSCRIBER", "no_speech")
+
+      assert read_dev()[:ai_in_practice][:transcriber] ==
+               {AiInPractice.Transcriber.Fake, [fail: :no_speech]}
+    end
+
+    test "an unknown value, or production, configures nothing" do
+      System.put_env("FAKE_TRANSCRIBER", "loud")
+      refute read_dev()[:ai_in_practice][:transcriber]
+
+      System.put_env("FAKE_TRANSCRIBER", "1")
+      System.put_env("ADMIN_IP", "100.88.155.65")
+      refute read_prod()[:ai_in_practice][:transcriber]
     end
   end
 end

@@ -17,6 +17,16 @@ defmodule AiInPracticeWeb.AssessmentLive do
   `.LiveSession` hook sends a beacon to `AiInPracticeWeb.SessionController`.
   The reconnect grace period covers a page that goes without one.
 
+  **Voice** (v2, PRD §7 step 2–3, §10). When a transcriber is configured
+  and answers (`AiInPractice.Transcriber.available?/0`, checked once the
+  page connects), the start screen offers to begin with spoken answers.
+  The question screen then has record and stop controls (the `.Voice`
+  hook, MediaRecorder). Each recording is a LiveView upload kept in memory
+  (`AiInPracticeWeb.MemoryUploadWriter`), sent to the transcriber from a
+  task and dropped. The text is put in the answer box for the person to
+  correct, and only what they send is an answer. Typing stays available
+  throughout, and every failure says so. Questions are never spoken.
+
   **Reconnecting.** The session id is sent to the browser, which keeps it
   in a page variable (`.LiveSession` hook) and sends it back as the
   `attach` connect param if the socket reconnects. The session waits a
@@ -27,13 +37,19 @@ defmodule AiInPracticeWeb.AssessmentLive do
   """
   use AiInPracticeWeb, :live_view
 
-  alias AiInPractice.{Assessment, Links, RoleGroups}
+  alias AiInPractice.{Assessment, Links, RoleGroups, Transcriber}
   alias AiInPractice.Assessment.Session
   alias AiInPractice.Reports.Content
 
   import AiInPracticeWeb.ReportComponents, only: [blocks: 1]
 
   @max_answer_chars 8_000
+
+  # A recording stops by itself after five minutes (the hook), which at the
+  # bitrate it asks for is well under a megabyte; the cap is generous for
+  # browsers that ignore the bitrate.
+  @max_recording_ms :timer.minutes(5)
+  @max_audio_bytes 16_000_000
 
   @impl true
   def mount(params, session, socket) do
@@ -57,7 +73,11 @@ defmodule AiInPracticeWeb.AssessmentLive do
         reason: nil,
         role_form: to_form(%{"role_group" => ""}),
         role_error: nil,
-        max_answer_chars: @max_answer_chars
+        max_answer_chars: @max_answer_chars,
+        voice?: false,
+        voice: :idle,
+        voice_error: nil,
+        max_recording_ms: @max_recording_ms
       )
 
     attach = connected?(socket) && get_connect_params(socket)["attach"]
@@ -76,9 +96,17 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   defp fresh(socket) do
     case Links.begin_session(socket.assigns.token) do
-      {:ok, link} -> assign(socket, phase: :start, link: link)
+      {:ok, link} -> socket |> assign(phase: :start, link: link) |> check_voice()
       {:error, _} -> assign(socket, phase: :dead_end)
     end
+  end
+
+  # Whether to offer voice: asked once the page connects, so a slow or
+  # absent transcriber never holds up the start screen.
+  defp check_voice(socket) do
+    if connected?(socket),
+      do: start_async(socket, :voice_check, fn -> Transcriber.available?() end),
+      else: socket
   end
 
   # A reconnect: carry on with the session if it is still there and belongs
@@ -88,6 +116,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
          {:ok, view} <- Assessment.attach(id, &(&1[:link_id] == link.id)) do
       socket
       |> assign(link: link, session_id: id, meta: view.meta, started?: link.status != :unused)
+      |> allow_voice()
       |> monitor_session(id)
       |> resume(view)
     else
@@ -120,7 +149,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
   def handle_event("begin", params, %{assigns: %{phase: :start}} = socket) do
     with {:ok, link} <- Links.begin_session(socket.assigns.token),
          {:ok, group} <- role_group(link, params) do
-      begin(socket, link, group)
+      begin(socket, link, group, mode(socket, params))
     else
       :choose_role ->
         {:noreply, assign(socket, role_error: "Choose the role group closest to yours.")}
@@ -135,7 +164,14 @@ defmodule AiInPracticeWeb.AssessmentLive do
     case Assessment.answer(socket.assigns.session_id, text) do
       :ok ->
         {:noreply,
-         assign(socket, phase: :thinking, answer: "", answer_error: nil, paste_note: false)}
+         assign(socket,
+           phase: :thinking,
+           answer: "",
+           answer_error: nil,
+           paste_note: false,
+           voice: :idle,
+           voice_error: nil
+         )}
 
       {:error, :empty} ->
         {:noreply,
@@ -157,8 +193,40 @@ defmodule AiInPracticeWeb.AssessmentLive do
     end
   end
 
+  # The draft, sent when the box loses focus, so that a re-render (the
+  # voice controls change while the person works) puts back what they
+  # wrote rather than an empty box.
+  def handle_event("draft", %{"answer" => text}, %{assigns: %{phase: :question}} = socket)
+      when is_binary(text),
+      do: {:noreply, assign(socket, answer: String.slice(text, 0, @max_answer_chars))}
+
   def handle_event("paste_refused", _params, socket),
     do: {:noreply, assign(socket, paste_note: true)}
+
+  # From the .Voice hook, which owns the microphone.
+  def handle_event("recording", _params, %{assigns: %{phase: :question}} = socket),
+    do: {:noreply, assign(socket, voice: :recording, voice_error: nil)}
+
+  def handle_event("recorded", _params, %{assigns: %{voice: :recording}} = socket),
+    do: {:noreply, assign(socket, voice: :transcribing)}
+
+  def handle_event("recording_failed", params, socket) do
+    error = if params["reason"] == "empty", do: :no_speech, else: :microphone
+    {:noreply, voice_failed(socket, error)}
+  end
+
+  # The upload form: refuse anything the upload config rejects.
+  def handle_event("voice_upload", _params, socket) do
+    case socket.assigns[:uploads][:audio] do
+      %{entries: entries} = upload ->
+        if Enum.any?(entries, &(upload_errors(upload, &1) != [])) or upload_errors(upload) != [],
+          do: {:noreply, socket |> cancel_audio() |> voice_failed(:unusable)},
+          else: {:noreply, socket}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
 
   def handle_event("finish", _params, %{assigns: %{phase: phase}} = socket)
       when phase in [:question, :thinking] do
@@ -180,12 +248,16 @@ defmodule AiInPracticeWeb.AssessmentLive do
   defp role_group(%{kind: :individual}, _params), do: :choose_role
   defp role_group(%{role_group: group}, _params), do: {:ok, group}
 
-  defp begin(socket, link, group) do
+  # Voice only if it was offered on this page.
+  defp mode(%{assigns: %{voice?: true}}, %{"mode" => "voice"}), do: :voice
+  defp mode(_socket, _params), do: :text
+
+  defp begin(socket, link, group, mode) do
     meta = %{
       link_id: link.id,
       link_kind: link.kind,
       role_group: group,
-      mode: :text,
+      mode: mode,
       date: Date.utc_today()
     }
 
@@ -194,12 +266,88 @@ defmodule AiInPracticeWeb.AssessmentLive do
         {:noreply,
          socket
          |> assign(phase: :opening, link: link, session_id: id, meta: meta, role_error: nil)
+         |> allow_voice()
          |> monitor_session(id)}
 
       {:error, _} ->
         {:noreply, failed(socket, :fatal)}
     end
   end
+
+  defp allow_voice(%{assigns: %{meta: %{mode: :voice}}} = socket) do
+    allow_upload(socket, :audio,
+      accept: :any,
+      max_entries: 1,
+      max_file_size: @max_audio_bytes,
+      auto_upload: true,
+      progress: &audio_progress/3,
+      writer: fn _name, _entry, _socket ->
+        {AiInPracticeWeb.MemoryUploadWriter, max_bytes: @max_audio_bytes}
+      end
+    )
+  end
+
+  defp allow_voice(socket), do: socket
+
+  defp cancel_audio(socket) do
+    Enum.reduce(socket.assigns.uploads.audio.entries, socket, fn entry, socket ->
+      cancel_upload(socket, :audio, entry.ref)
+    end)
+  end
+
+  # The whole recording has arrived: take it out of the upload (it was
+  # never on disk) and send it to the transcriber from a task. The answer
+  # box is the person's; the text is pushed to the hook, which adds it.
+  defp audio_progress(:audio, %{done?: true} = entry, %{assigns: %{phase: :question}} = socket) do
+    audio = consume_uploaded_entry(socket, entry, fn %{audio: audio} -> {:ok, audio} end)
+
+    case Transcriber.format(entry.client_type) do
+      {:ok, format} ->
+        {:noreply,
+         socket
+         |> assign(voice: :transcribing, voice_error: nil)
+         |> start_async(:transcribe, fn -> Transcriber.transcribe(audio, format) end)}
+
+      :error ->
+        {:noreply, voice_failed(socket, :unusable)}
+    end
+  end
+
+  defp audio_progress(:audio, %{done?: true} = entry, socket) do
+    _ = consume_uploaded_entry(socket, entry, fn _meta -> {:ok, nil} end)
+    {:noreply, socket}
+  end
+
+  defp audio_progress(:audio, _entry, socket), do: {:noreply, socket}
+
+  defp voice_failed(socket, error), do: assign(socket, voice: :idle, voice_error: error)
+
+  @impl true
+  def handle_async(:voice_check, {:ok, available?}, socket),
+    do: {:noreply, assign(socket, voice?: available? == true)}
+
+  def handle_async(:voice_check, {:exit, _reason}, socket),
+    do: {:noreply, assign(socket, voice?: false)}
+
+  def handle_async(:transcribe, result, %{assigns: %{phase: :question}} = socket) do
+    case result do
+      {:ok, {:ok, text}} ->
+        {:noreply,
+         socket
+         |> assign(voice: :idle, voice_error: nil)
+         |> push_event("transcribed", %{text: text})}
+
+      {:ok, {:error, class}} ->
+        {:noreply, voice_failed(socket, class)}
+
+      {:exit, _reason} ->
+        {:noreply, voice_failed(socket, :unavailable)}
+    end
+  end
+
+  # The question moved on (time up, finished early) before the text came.
+  def handle_async(:transcribe, _result, socket),
+    do: {:noreply, assign(socket, voice: :idle, voice_error: nil)}
 
   defp monitor_session(socket, id) do
     case Session.whereis(id) do
@@ -229,7 +377,14 @@ defmodule AiInPracticeWeb.AssessmentLive do
   defp on_event({:question, question}, socket) do
     case start_link(socket, question) do
       {:ok, socket} ->
-        assign(socket, phase: :question, question: question, answer: "", answer_error: nil)
+        assign(socket,
+          phase: :question,
+          question: question,
+          answer: "",
+          answer_error: nil,
+          voice: :idle,
+          voice_error: nil
+        )
 
       :lost_race ->
         Assessment.stop(socket.assigns.session_id)
@@ -372,7 +527,12 @@ defmodule AiInPracticeWeb.AssessmentLive do
         You have one attempt. Closing or reloading this page ends the conversation, and the link cannot be opened again.
       </li>
       <li>You may leave out the names of clients and employers, and give figures as ranges.</li>
-      <li>Type your answers. Pasting is turned off, but your computer's dictation works.</li>
+      <li :if={!@voice?}>
+        Type your answers. Pasting is turned off, but your computer's dictation works.
+      </li>
+      <li :if={@voice?} id="voice-offered">
+        Type your answers, or speak them and correct the text before you send it. Pasting is turned off, but your computer's dictation works.
+      </li>
       <li>You can finish early at any point.</li>
     </ul>
 
@@ -386,6 +546,13 @@ defmodule AiInPracticeWeb.AssessmentLive do
       <.link href={~p"/terms"} target="_blank" rel="noopener">terms</.link>
       explain why this is never an automated decision about you. Both open in a new tab.
     </p>
+
+    <%= if @voice? do %>
+      <h2>Typing or speaking</h2>
+      <p id="voice-handling">
+        If you choose to speak, each recording goes to DSC's own transcription service, is turned into text and is deleted at once. It is never stored. You see the text and can correct it before you send it, and you can type instead at any point. The questions are only ever shown on screen. Your reports say whether your answers were typed or spoken, and transcription slips never count against you.
+      </p>
+    <% end %>
 
     <.form for={@role_form} id="begin-form" phx-submit="begin">
       <%= if @link.kind == :individual do %>
@@ -405,7 +572,18 @@ defmodule AiInPracticeWeb.AssessmentLive do
           </:item>
         </.list>
       <% end %>
-      <.button variant="primary" id="begin">Begin the conversation</.button>
+      <%= if @voice? do %>
+        <div class="page-actions">
+          <.button variant="primary" id="begin" name="mode" value="text">
+            Begin, typing my answers
+          </.button>
+          <.button id="begin-voice" name="mode" value="voice">
+            Begin, speaking my answers
+          </.button>
+        </div>
+      <% else %>
+        <.button variant="primary" id="begin">Begin the conversation</.button>
+      <% end %>
     </.form>
     <p class="quiet">Your link is used once the first question appears.</p>
     """
@@ -432,7 +610,14 @@ defmodule AiInPracticeWeb.AssessmentLive do
     </h1>
 
     <%= if @phase == :question do %>
-      <.form for={%{}} id="answer-form" phx-submit="answer">
+      <.voice
+        :if={@meta && @meta.mode == :voice && @uploads[:audio]}
+        uploads={@uploads}
+        voice={@voice}
+        voice_error={@voice_error}
+        max_recording_ms={@max_recording_ms}
+      />
+      <.form for={%{}} id="answer-form" phx-submit="answer" phx-change="draft">
         <div class="field">
           <label for={"answer-#{@question.number}"} class="field-label">your answer</label>
           <textarea
@@ -441,6 +626,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
             rows="8"
             maxlength={@max_answer_chars}
             phx-hook=".AnswerBox"
+            phx-debounce="blur"
             aria-describedby="answer-help"
             aria-invalid={@answer_error && "true"}
           >{@answer}</textarea>
@@ -448,13 +634,20 @@ defmodule AiInPracticeWeb.AssessmentLive do
             {@answer_error}
           </p>
           <p id="answer-help" class="quiet">
-            <span :if={!@paste_note}>Type, or use your computer's dictation.</span>
+            <span :if={!@paste_note && @meta.mode == :voice}>
+              Record, or type. Check the text and correct anything misheard before you send it.
+            </span>
+            <span :if={!@paste_note && @meta.mode != :voice}>
+              Type, or use your computer's dictation.
+            </span>
             <span :if={@paste_note} id="paste-note" role="status">
               Pasting is turned off here. Please type your answer, or use your computer's dictation.
             </span>
           </p>
         </div>
-        <.button variant="primary" id="send">Send answer</.button>
+        <.button variant="primary" id="send" disabled={@voice == :transcribing}>
+          Send answer
+        </.button>
       </.form>
     <% else %>
       <p class="quiet" role="status" id="status">The next question is being written.</p>
@@ -617,6 +810,140 @@ defmodule AiInPracticeWeb.AssessmentLive do
     </div>
     """
   end
+
+  attr :uploads, :map, required: true
+  attr :voice, :atom, required: true
+  attr :voice_error, :atom, default: nil
+  attr :max_recording_ms, :integer, required: true
+
+  # Record and stop, for spoken answers. The .Voice hook owns the
+  # microphone: it tells the server when recording starts and stops, then
+  # uploads the recording into the hidden input; the text comes back as a
+  # "transcribed" event and goes into the answer box.
+  defp voice(assigns) do
+    ~H"""
+    <section
+      id="voice"
+      class="voice"
+      phx-hook=".Voice"
+      data-state={@voice}
+      data-max-ms={@max_recording_ms}
+      aria-label="speak your answer"
+    >
+      <form id="voice-form" phx-change="voice_upload" phx-submit="voice_upload" hidden>
+        <.live_file_input upload={@uploads.audio} />
+      </form>
+      <%= case @voice do %>
+        <% :recording -> %>
+          <p class="recording" id="recording" role="status">
+            Recording. Speak your answer, then stop.
+          </p>
+          <.button type="button" id="stop-recording" data-voice="stop">Stop recording</.button>
+          <p class="quiet">It stops by itself after five minutes.</p>
+        <% :transcribing -> %>
+          <p class="lede" id="transcribing" role="status">Turning your recording into text.</p>
+        <% :idle -> %>
+          <.button type="button" id="record" data-voice="start">Record your answer</.button>
+      <% end %>
+      <p :if={@voice_error} class="field-error" id="voice-error" role="alert">
+        {voice_message(@voice_error)}
+      </p>
+    </section>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".Voice">
+      // Records one answer at a time with MediaRecorder and uploads it.
+      // Nothing is kept here: the recording is dropped once it is sent,
+      // and the microphone is released whenever recording stops.
+      const TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"]
+
+      export default {
+        mounted() {
+          this.onClick = (e) => {
+            const action = e.target.closest("[data-voice]")?.dataset.voice
+            if (action === "start") this.start()
+            if (action === "stop") this.stop()
+          }
+          this.el.addEventListener("click", this.onClick)
+          this.handleEvent("transcribed", ({text}) => this.insert(text))
+        },
+        destroyed() {
+          this.el.removeEventListener("click", this.onClick)
+          this.release(true)
+        },
+        async start() {
+          if (this.recorder) return
+          if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+            return this.pushEvent("recording_failed", {reason: "unsupported"})
+          }
+          try {
+            this.stream = await navigator.mediaDevices.getUserMedia({audio: true})
+          } catch (_e) {
+            return this.pushEvent("recording_failed", {reason: "denied"})
+          }
+          const mimeType = TYPES.find((t) => MediaRecorder.isTypeSupported(t))
+          const options = {audioBitsPerSecond: 32000, ...(mimeType ? {mimeType} : {})}
+          const chunks = []
+          this.recorder = new MediaRecorder(this.stream, options)
+          this.recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+          this.recorder.onstop = () => {
+            const type = (this.recorder?.mimeType || mimeType || "audio/webm")
+            this.release(false)
+            if (this.discard) return
+            const blob = new Blob(chunks, {type})
+            chunks.length = 0
+            if (blob.size === 0) return this.pushEvent("recording_failed", {reason: "empty"})
+            this.pushEvent("recorded", {})
+            this.upload("audio", [new File([blob], "answer", {type})])
+          }
+          this.discard = false
+          this.recorder.start()
+          this.timer = setTimeout(() => this.stop(), Number(this.el.dataset.maxMs))
+          this.pushEvent("recording", {})
+        },
+        stop() {
+          if (this.recorder && this.recorder.state !== "inactive") this.recorder.stop()
+        },
+        release(discard) {
+          clearTimeout(this.timer)
+          if (discard) {
+            this.discard = true
+            this.stop()
+          }
+          this.stream?.getTracks().forEach((t) => t.stop())
+          this.stream = null
+          this.recorder = null
+        },
+        // The text goes after anything already written, for the person to
+        // correct; it is theirs once it is in the box.
+        insert(text) {
+          const box = document.querySelector("#answer-form textarea")
+          if (!box) return
+          const before = box.value.replace(/\s+$/, "")
+          box.value = before ? `${before} ${text}` : text
+          box.focus()
+          box.setSelectionRange(box.value.length, box.value.length)
+          // As if typed, so the draft reaches the server when the box
+          // loses focus.
+          box.dispatchEvent(new Event("input", {bubbles: true}))
+        }
+      }
+    </script>
+    """
+  end
+
+  defp voice_message(:microphone),
+    do:
+      "The microphone could not be used. Allow this page to use it and record again, or type your answer."
+
+  defp voice_message(:no_speech),
+    do: "No words were heard in that recording. Record again, or type your answer."
+
+  defp voice_message(:unusable),
+    do: "That recording could not be used. Record again, or type your answer."
+
+  defp voice_message(:unavailable),
+    do:
+      "Your recording could not be turned into text just now. Record again in a moment, or type your answer."
 
   attr :link, :any, required: true
 

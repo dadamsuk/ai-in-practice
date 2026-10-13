@@ -16,7 +16,11 @@ config :ai_in_practice,
   model: "anthropic/claude-haiku-5.5",
   # The model client (AiInPractice.LLM). Tests use the fake; development can
   # with FAKE_LLM=1 (config/runtime.exs).
-  llm: {AiInPractice.LLM.OpenRouter, []}
+  llm: {AiInPractice.LLM.OpenRouter, []},
+  # The transcription client for spoken answers (AiInPractice.Transcriber).
+  # Off until config/runtime.exs finds TRANSCRIPTION_SERVICE_URL and _KEY,
+  # or, in development, FAKE_TRANSCRIBER.
+  transcriber: nil
 
 # Configure the endpoint
 config :ai_in_practice, AiInPracticeWeb.Endpoint,

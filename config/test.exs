@@ -45,4 +45,7 @@ config :ai_in_practice,
   # :reattach_ms themselves.
   assessment_limits: %{reattach_ms: 0},
   openrouter_api_key: "test-key",
-  openrouter_req_options: [plug: {Req.Test, AiInPractice.LLM.OpenRouter}]
+  openrouter_req_options: [plug: {Req.Test, AiInPractice.LLM.OpenRouter}],
+  # The fake transcriber; the engine's client is answered by Req.Test stubs.
+  transcriber: {AiInPractice.Transcriber.Fake, []},
+  transcriber_req_options: [plug: {Req.Test, AiInPractice.Transcriber.Manuel}]

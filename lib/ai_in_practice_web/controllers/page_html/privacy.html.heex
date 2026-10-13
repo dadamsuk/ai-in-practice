@@ -13,6 +13,7 @@
   <h2>What is never kept</h2>
   <ul id="never-kept">
     <li>Your answers, and the questions you were asked.</li>
+    <li>Recordings of your voice, if you choose to speak your answers.</li>
     <li>Both reports, on screen and as PDFs.</li>
     <li>Your name, contact details or anything else that identifies you.</li>
   </ul>
@@ -53,11 +54,15 @@
   <dl class="list" id="third-parties">
     <dt class="mono">cloudflare</dt>
     <dd>
-      Cloudflare sits in front of this site and handles the secure connection, so your answers and reports pass through it in readable form on their way to and from the server. It sees your IP address, as any network provider does. It does not keep what you send, and DSC keeps its logging of request contents switched off.
+      Cloudflare sits in front of this site and handles the secure connection, so your answers, any recordings of them and your reports pass through it in readable form on their way to and from the server. It sees your IP address, as any network provider does. It does not keep what you send, and DSC keeps its logging of request contents switched off.
     </dd>
     <dt class="mono">openrouter</dt>
     <dd>
       To write each question and the reports, the conversation so far is sent to OpenRouter, which passes it to the model's provider. Every request asks for zero data retention, so it may only go to a provider that does not keep it or use it for training.
+    </dd>
+    <dt class="mono">transcription</dt>
+    <dd>
+      If you choose to speak, each recording goes from the server, over a private network, to a transcription service DSC runs on its own equipment. It runs the speech model itself, so no other company receives the recording. The text comes straight back to your page, and the service keeps neither the recording nor the text.
     </dd>
     <dt class="mono">model provider</dt>
     <dd>
@@ -72,8 +77,8 @@
   </p>
 
   <h2>Voice</h2>
-  <p>
-    Spoken answers are not offered yet. When they are, the audio will go to DSC's transcription service, be turned into text for you to correct, and be discarded straight away.
+  <p id="voice">
+    You can choose to speak your answers instead of typing them. Each recording is sent to DSC's transcription service, turned into text and discarded straight away: it is never written to disk, to the database or to a log. The text is put in the answer box for you to correct, and only what you send counts as your answer. You can type instead at any point. The questions are only ever shown on screen, never spoken. Your reports say whether your answers were typed or spoken, and transcription mistakes never count against you.
   </p>
 
   <h2>Why we use it, and your rights</h2>

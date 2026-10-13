@@ -29,6 +29,19 @@ if api_key = System.get_env("OPENROUTER_API_KEY") do
   config :ai_in_practice, openrouter_api_key: api_key
 end
 
+# David's transcription engine, for spoken answers (v2). Without both, voice
+# is not offered and everyone types.
+transcription_url = System.get_env("TRANSCRIPTION_SERVICE_URL")
+transcription_key = System.get_env("TRANSCRIPTION_SERVICE_KEY")
+
+if transcription_url not in [nil, ""] and transcription_key not in [nil, ""] do
+  config :ai_in_practice,
+    transcription_service: [url: transcription_url, api_key: transcription_key],
+    transcriber:
+      {AiInPractice.Transcriber.Manuel,
+       model: System.get_env("TRANSCRIPTION_SERVICE_MODEL", "parakeet")}
+end
+
 # The assessor report signing key (AiInPractice.Reports.Signing): a Base64
 # Ed25519 seed, and the public keys of retired ones, comma-separated. In
 # production the application refuses to boot without a key; elsewhere an
@@ -45,6 +58,12 @@ if config_env() == :dev do
 
   if opts = fake_mode && AiInPractice.LLM.Fake.modes()[fake_mode] do
     config :ai_in_practice, llm: {AiInPractice.LLM.Fake, opts}
+  end
+
+  transcriber_mode = System.get_env("FAKE_TRANSCRIBER")
+
+  if opts = transcriber_mode && AiInPractice.Transcriber.Fake.modes()[transcriber_mode] do
+    config :ai_in_practice, transcriber: {AiInPractice.Transcriber.Fake, opts}
   end
 
   if fake_mode == "short" do
