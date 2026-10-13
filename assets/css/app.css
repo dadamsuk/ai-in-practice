@@ -453,6 +453,68 @@ textarea {
   background: var(--band);
 }
 
+/* The conversation */
+
+/* The question on screen: serif at a generous size. */
+.question {
+  font-size: 28px;
+  line-height: calc(var(--unit) * 3);
+  font-weight: 400;
+  max-width: var(--measure);
+  margin: calc(var(--unit) * 2) 0 calc(var(--unit) * 2);
+}
+
+/* Focus is moved here so the question is read out; it is not a control,
+   so it draws no outline (which would read as a box). */
+.question:focus,
+.question:focus-visible {
+  outline: none;
+}
+
+/* A quiet progress rule: five band segments, filled in ink. */
+.progress {
+  display: flex;
+  gap: calc(var(--unit) / 2);
+  max-width: var(--measure);
+  margin: var(--unit) 0;
+}
+
+.progress-step {
+  flex: 1;
+  height: 6px;
+  background: var(--band);
+}
+
+.progress-step.progress-done {
+  background: var(--ink);
+}
+
+/* Reports on screen: each opens on a structure rule. */
+.report {
+  border-top: var(--rule);
+  margin-top: calc(var(--unit) * 3);
+  max-width: var(--measure);
+}
+
+.report-title {
+  margin-top: var(--unit);
+}
+
+.report blockquote {
+  margin: 0 0 var(--unit);
+  padding-left: var(--unit);
+  border-left: var(--hairline);
+  font-style: italic;
+}
+
+.report .labelled .mono {
+  line-height: calc(var(--unit) * 2);
+}
+
+.report a {
+  overflow-wrap: anywhere;
+}
+
 /* LiveView: hide reconnect notices until needed. */
 [hidden] {
   display: none !important;

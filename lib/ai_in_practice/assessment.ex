@@ -21,5 +21,7 @@ defmodule AiInPractice.Assessment do
   defdelegate answer(id, text), to: Session
   defdelegate finish_early(id), to: Session
   defdelegate report(id), to: Session
+  defdelegate download(id), to: Session
+  defdelegate attach(id, check, owner \\ self()), to: Session
   defdelegate stop(id), to: Session
 end

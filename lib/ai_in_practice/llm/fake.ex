@@ -10,6 +10,11 @@ defmodule AiInPractice.LLM.Fake do
 
   Tests pass `responder: fn request -> ... end` to script any reply,
   including `{:error, class}`.
+
+  To walk the error screens, `:fail_turn` (`{n, class}`) fails every turn
+  once `n` questions have been asked (`{0, class}`: before the first), and
+  `:fail_report` (a class, or `:report_invalid`) fails the report call.
+  `modes/0` names the combinations `FAKE_LLM` selects.
   """
 
   @behaviour AiInPractice.LLM
@@ -27,6 +32,24 @@ defmodule AiInPractice.LLM.Fake do
     attitude: "What view about AI did you hold a year ago that you have since changed?"
   ]
 
+  @modes %{
+    "1" => [],
+    "true" => [],
+    "spend_refused" => [fail_turn: {0, :spend_refused}],
+    "fail_mid" => [fail_turn: {2, :fatal}],
+    "report_invalid" => [fail_report: :report_invalid],
+    "short" => []
+  }
+
+  @doc """
+  The `FAKE_LLM` values (dev only): `1` (a normal run), `spend_refused`
+  (refused before the first question), `fail_mid` (fails after two
+  questions), `report_invalid` (the report cannot be written) and `short`
+  (a normal run; `config/runtime.exs` also sets a one-minute hard stop).
+  """
+  @spec modes() :: %{String.t() => keyword()}
+  def modes, do: @modes
+
   @impl true
   def request(request, opts) do
     case Keyword.get(opts, :responder) do
@@ -39,26 +62,38 @@ defmodule AiInPractice.LLM.Fake do
     asked = request |> user_text() |> count(~r/<question /)
     limit = Keyword.get(opts, :questions, 5)
 
-    data =
-      if asked >= limit do
-        %{"question" => "", "kind" => "main", "covered_areas" => all_areas(), "close" => true}
-      else
-        {_area, question} = Enum.at(@bank, rem(asked, length(@bank)))
-
-        covered =
-          @bank |> Enum.take(min(asked, length(@bank))) |> Enum.map(&Atom.to_string(elem(&1, 0)))
-
-        %{"question" => question, "kind" => "main", "covered_areas" => covered, "close" => false}
-      end
-
-    ok(data)
+    case Keyword.get(opts, :fail_turn) do
+      {n, class} when asked >= n -> {:error, class}
+      _ -> ok(turn_data(asked, limit))
+    end
   end
 
-  defp default(%{purpose: :report} = request, _opts) do
+  defp default(%{purpose: :report} = request, opts) do
+    case Keyword.get(opts, :fail_report) do
+      nil -> ok(report_data(request))
+      # Missing every section, so it is rejected twice, as a real one would be.
+      :report_invalid -> ok(%{"summary" => "Nothing else."})
+      class -> {:error, class}
+    end
+  end
+
+  defp turn_data(asked, limit) when asked >= limit,
+    do: %{"question" => "", "kind" => "main", "covered_areas" => all_areas(), "close" => true}
+
+  defp turn_data(asked, _limit) do
+    {_area, question} = Enum.at(@bank, rem(asked, length(@bank)))
+
+    covered =
+      @bank |> Enum.take(min(asked, length(@bank))) |> Enum.map(&Atom.to_string(elem(&1, 0)))
+
+    %{"question" => question, "kind" => "main", "covered_areas" => covered, "close" => false}
+  end
+
+  defp report_data(request) do
     text = user_text(request)
     answers = for [_, a] <- Regex.scan(~r{<answer>\n(.*?)\n</answer>}s, text), do: a
     reading = for [_, id] <- Regex.scan(~r/<reading id="(\d+)">/, text), do: String.to_integer(id)
-    ok(report(answers, Enum.take(reading, 2)))
+    report(answers, Enum.take(reading, 2))
   end
 
   @doc "A complete, valid report payload quoting `answers`, for tests and dev."

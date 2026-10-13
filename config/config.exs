@@ -71,9 +71,19 @@ config :phoenix, :json_library, Jason
 
 # Link tokens must never reach the logs. Phoenix filters these keys (matched
 # as substrings) from logged params; "url" covers LiveView join payloads,
-# which carry the page URL. Request paths are redacted by
+# which carry the page URL. "answer" keeps a person's answers out of
+# LiveView's event log, and "session" the assessment session id (as secret
+# as a token) out of the report downloads' log. Request paths are redacted by
 # AiInPracticeWeb.Plugs.RequestLogger.
-config :phoenix, :filter_parameters, ["password", "secret", "token", "url", "redirect"]
+config :phoenix, :filter_parameters, [
+  "password",
+  "secret",
+  "token",
+  "url",
+  "redirect",
+  "answer",
+  "session"
+]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

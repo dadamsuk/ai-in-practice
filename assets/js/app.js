@@ -27,7 +27,9 @@ import {hooks as colocatedHooks} from "phoenix-colocated/ai_in_practice"
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
+  // `attach` is the assessment session on this page, if any (set by the
+  // .LiveSession hook), so a dropped connection can carry on with it.
+  params: () => ({_csrf_token: csrfToken, attach: window.aipAttach || null}),
   hooks: {...colocatedHooks},
 })
 

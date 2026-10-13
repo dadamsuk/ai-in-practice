@@ -5,7 +5,7 @@ defmodule AiInPractice.RuntimeConfigTest do
 
   alias AiInPractice.AdminBind
 
-  @vars ~w(ADMIN_IP ADMIN_PORT DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PHX_SERVER)
+  @vars ~w(ADMIN_IP ADMIN_PORT DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PHX_SERVER FAKE_LLM)
 
   setup do
     saved = Map.new(@vars, &{&1, System.get_env(&1)})
@@ -53,6 +53,38 @@ defmodule AiInPractice.RuntimeConfigTest do
 
     assert_raise ArgumentError, ~r/must not bind to 0\.0\.0\.0/, fn ->
       AdminBind.validate!(:prod, admin_config(read_prod()))
+    end
+  end
+
+  describe "FAKE_LLM" do
+    defp read_dev, do: Config.Reader.read!("config/runtime.exs", env: :dev, target: :host)
+
+    test "in dev, 1 selects the fake model and the error modes configure it" do
+      System.put_env("FAKE_LLM", "1")
+      assert read_dev()[:ai_in_practice][:llm] == {AiInPractice.LLM.Fake, []}
+
+      System.put_env("FAKE_LLM", "spend_refused")
+
+      assert read_dev()[:ai_in_practice][:llm] ==
+               {AiInPractice.LLM.Fake, [fail_turn: {0, :spend_refused}]}
+
+      refute read_dev()[:ai_in_practice][:assessment_limits]
+    end
+
+    test "short adds a one-minute hard stop" do
+      System.put_env("FAKE_LLM", "short")
+      config = read_dev()[:ai_in_practice]
+      assert config[:llm] == {AiInPractice.LLM.Fake, []}
+      assert config[:assessment_limits] == %{hard_stop_ms: 60_000}
+    end
+
+    test "an unknown value, or production, leaves the real model alone" do
+      System.put_env("FAKE_LLM", "yes please")
+      refute read_dev()[:ai_in_practice][:llm]
+
+      System.put_env("FAKE_LLM", "1")
+      System.put_env("ADMIN_IP", "100.88.155.65")
+      refute read_prod()[:ai_in_practice][:llm]
     end
   end
 end

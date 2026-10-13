@@ -243,6 +243,19 @@ defmodule AiInPractice.Links do
 
   def begin_session(_), do: {:error, :not_found}
 
+  @doc """
+  The assessment link for a token, whatever its state, with its recruiter
+  link; nil if there is none. For carrying on a session already begun.
+  """
+  @spec get_assessment_link_by_token(term()) :: AssessmentLink.t() | nil
+  def get_assessment_link_by_token(token) when is_binary(token) do
+    AssessmentLink
+    |> Repo.get_by(token_hash: Token.hash(token))
+    |> Repo.preload(:recruiter_link)
+  end
+
+  def get_assessment_link_by_token(_), do: nil
+
   defp check_startable(nil), do: {:error, :not_found}
   defp check_startable(%AssessmentLink{revoked_at: %DateTime{}}), do: {:error, :revoked}
   defp check_startable(%AssessmentLink{status: :completed}), do: {:error, :completed}

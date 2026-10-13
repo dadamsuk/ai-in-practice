@@ -21,7 +21,9 @@ This repository holds the whole application and the rubric it assesses against, 
 | The database holds link and usage data only: token hashes, link type, the recruiter firm and contact (entered by DSC), quota, role group, status and timestamps, plus the curated reading list. Nothing that identifies a candidate. | `priv/repo/migrations`, `lib/ai_in_practice/links.ex`. Test: `test/ai_in_practice/links/schema_test.exs` checks no column could hold session data |
 | Link tokens are 256 random bits, and only their SHA-256 hash is stored, so the database alone cannot open a link. A new link's address is shown once. | `lib/ai_in_practice/links/token.ex` |
 | A recruiter's labels for their candidate links (e.g. initials) stay in their own browser and are never sent to the server. | `lib/ai_in_practice_web/live/recruiter_live.ex`. Test: `test/ai_in_practice_web/live/recruiter_live_test.exs` |
-| Link tokens never reach the logs. | `lib/ai_in_practice_web/plugs/request_logger.ex` redacts them from request paths. `config/config.exs` filters them from logged params. Tests: `test/ai_in_practice_web/plugs/request_logger_test.exs` |
+| Link tokens never reach the logs, nor do answers or the session id that report downloads use. | `lib/ai_in_practice_web/plugs/request_logger.ex` redacts them from request paths. `config/config.exs` filters `token`, `answer` and `session` from logged params. Tests: `test/ai_in_practice_web/plugs/request_logger_test.exs`, `test/ai_in_practice_web/live/assessment_privacy_test.exs` |
+| Reports are downloaded from the live session's memory, and from nowhere else. Once the page is closed or the hour is up, there is nothing to download. | `lib/ai_in_practice_web/controllers/report_controller.ex`. Test: `test/ai_in_practice_web/controllers/report_controller_test.exs` |
+| An unusable link says nothing about itself: unknown, withdrawn, used and completed links get the same page. | `lib/ai_in_practice_web/plugs/usable_link.ex`. Test: `test/ai_in_practice_web/plugs/usable_link_test.exs` |
 | Assessment pages and report downloads are never cached or indexed, and links do not leak through the `Referer` header. | `lib/ai_in_practice_web/plugs/security_headers.ex` |
 | No third-party requests: fonts are self-hosted and there is no analytics. | `priv/static/fonts`, `test/ai_in_practice_web/design_system_test.exs` |
 | Admin is reachable only over Tailscale, on a separate listener with its own router. | `lib/ai_in_practice_web/admin/`, `lib/ai_in_practice/admin_bind.ex`, `test/ai_in_practice_web/admin_endpoint_test.exs` |
@@ -43,7 +45,26 @@ mix assessment.try finance --fake                       # the fake model, no cos
 OPENROUTER_API_KEY=... mix assessment.try board_ned     # the real model
 ```
 
-Set `FAKE_LLM=1` to run the dev server on the fake model (development only).
+Set `FAKE_LLM=1` to run the dev server on the fake model (development only). To see the error screens, set `FAKE_LLM` to one of these values instead:
+
+- `spend_refused`: refused before the first question (the "not available just now" screen; the link stays unused)
+- `fail_mid`: fails after two questions
+- `report_invalid`: the reports cannot be written
+- `short`: a normal run with a one-minute hard stop
+
+## The candidate journey
+
+`/a/TOKEN` is one LiveView, `lib/ai_in_practice_web/live/assessment_live.ex` (PRD §7):
+
+1. **Start screen.** What this is and what it is not, the time it takes, one attempt, anonymising, how answers are handled, and (for a recruiter's link) who sent it and what they can see. The role group is shown, or chosen for an individual link. Opening it does not use the link.
+2. **Conversation.** One question at a time, with focus moved to each new question. Paste and drop are refused in the answer box (dictation still works). A quiet five-segment progress rule. "Finish early", with a confirmation. The browser warns before the page is closed.
+3. **Generating**, then **reports**: both reports on screen (the candidate's, then the assessor's), with a download for each and a prominent warning that nothing is kept.
+
+The link is used up when the first question arrives and completed when the reports arrive. **Error screens:** temporarily unavailable (before the first question, with the link unused), a failure mid-conversation, reports that could not be written, no answers, and reports past their hour. The screens after the link was used say who can send a new one: the recruiter, or David for an individual link.
+
+**Reconnecting:** if the connection drops, the page reattaches to the same session for up to two minutes. Reloading or closing the page ends the conversation.
+
+The PDFs are interim plain renderings (`lib/ai_in_practice/reports/pdf.ex`) of the same content the screen shows (`lib/ai_in_practice/reports/content.ex`). Epic 5 replaces them with the designed A4 templates and signs the assessor report.
 
 ## Links and access
 

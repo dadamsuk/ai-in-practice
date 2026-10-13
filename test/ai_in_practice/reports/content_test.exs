@@ -1,0 +1,121 @@
+defmodule AiInPractice.Reports.ContentTest do
+  use AiInPractice.DataCase, async: true
+
+  import AiInPractice.ReportFixtures
+
+  alias AiInPractice.Assessment.Report
+  alias AiInPractice.Reading
+  alias AiInPractice.Reports.Content
+
+  defp headings(blocks), do: for({:h2, text} <- blocks, do: text)
+
+  test "the candidate report has every section the rubric asks for, in order" do
+    blocks = Content.candidate(report_fixture())
+
+    assert headings(blocks) == [
+             "Summary",
+             "The five areas",
+             "What you are doing well",
+             "The main gap",
+             "Next steps",
+             "What the assessor report contains"
+           ]
+
+    texts = Content.texts(blocks)
+    assert "In the next two weeks" in texts
+    assert "how you will know it helped" in texts
+    assert "After that" in texts
+
+    for area <- AiInPractice.Rubric.areas(),
+        do: assert({:h3, AiInPractice.Rubric.area_name(area)} in blocks)
+  end
+
+  test "the assessor report opens on its statement and has quotes, strong answers and questions" do
+    blocks = Content.assessor(report_fixture())
+
+    assert [{:statement, statement} | _] = blocks
+    assert statement =~ "conversation starter"
+    assert statement =~ "has not been checked"
+    assert statement =~ "one input to human judgement"
+
+    assert headings(blocks) == [
+             "Summary",
+             "The five areas",
+             "What to explore next",
+             "Questions to ask in person"
+           ]
+
+    assert {:quote, "I used AI to draft the quarterly pricing"} in blocks
+    texts = Content.texts(blocks)
+    assert "a strong answer for this role would include" in texts
+    assert "where this one fell short" in texts
+    assert "listen for" in texts
+    # The candidate's own next steps and reading stay private.
+    refute "In the next two weeks" in texts
+    refute "Further reading" in texts
+  end
+
+  test "never shows an area's internal level or confidence" do
+    report = report_fixture()
+    assert Enum.all?(report.areas, &(&1.level == :developing and &1.confidence == :medium))
+
+    for blocks <- [Content.candidate(report), Content.assessor(report)] do
+      text = blocks |> Content.texts() |> Enum.join(" ")
+      refute text =~ ~r/\b(developing|capable|advanced|early|insufficient)\b/i
+      refute text =~ ~r/\bmedium\b/i
+      refute Enum.any?(Report.leaks(report))
+    end
+  end
+
+  test "the manipulation note appears on the assessor report only when needed" do
+    plain = Content.assessor(report_fixture())
+    refute {:strong, Report.manipulation_note()} in plain
+
+    flagged = Content.assessor(report_fixture(["One."], %{"manipulation_attempted" => true}))
+    assert {:strong, Report.manipulation_note()} in flagged
+    refute Report.manipulation_note() in Content.texts(Content.candidate(report_fixture()))
+  end
+
+  test "reading picks become entries from the list; with none, there is no reading section" do
+    {:ok, item} =
+      Reading.create_item(%{
+        title: "Working with AI",
+        url: "https://example.com/working",
+        areas: [:personal_use],
+        note: "Short and practical."
+      })
+
+    blocks = Content.candidate(report_fixture(["One."], %{"reading_picks" => [item.id]}))
+    assert "Further reading" in headings(blocks)
+
+    assert {:reading,
+            %{
+              title: "Working with AI",
+              url: "https://example.com/working",
+              note: "Short and practical."
+            }} in blocks
+
+    refute "Further reading" in headings(Content.candidate(report_fixture()))
+  end
+
+  test "a reading pick removed from the list since is skipped" do
+    {:ok, item} =
+      Reading.create_item(%{title: "Gone", url: "https://example.com/g", areas: [:attitude]})
+
+    report = report_fixture(["One."], %{"reading_picks" => [item.id]})
+    {:ok, _} = Reading.delete_item(item)
+    refute "Further reading" in headings(Content.candidate(report))
+  end
+
+  test "the header names the role group, date, mode and kind of link, in words" do
+    assert Content.header(meta_fixture()) == [
+             {"role group", "Finance"},
+             {"date", "13 October 2026"},
+             {"answers", "typed"},
+             {"link", "from a recruiter"}
+           ]
+
+    assert {"link", "individual"} in Content.header(meta_fixture(%{link_kind: :individual}))
+    assert {"answers", "spoken"} in Content.header(meta_fixture(%{mode: :voice}))
+  end
+end

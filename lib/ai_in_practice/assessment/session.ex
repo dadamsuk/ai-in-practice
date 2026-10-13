@@ -5,10 +5,15 @@ defmodule AiInPractice.Assessment.Session do
   session id that has nothing to do with the link token.
 
   It holds the transcript in memory only. It stops, and everything it held
-  goes with it, when its owner (the LiveView) exits, when the owner calls
-  `stop/1`, when the conversation fails, or once the report has been
+  goes with it, when its owner (the LiveView) has been gone for
+  `:reattach_ms` without a new owner attaching (`attach/2`), when the owner
+  calls `stop/1`, when the conversation fails, or once the report has been
   available for `:report_ttl_ms`. The 40-minute hard stop closes the
   conversation and moves straight to the report.
+
+  The grace period lets a LiveView that lost its connection reconnect to
+  the same conversation; events sent while no owner is attached are
+  dropped, and `attach/2` returns where the session stands instead.
 
   ## Events
 
@@ -24,6 +29,8 @@ defmodule AiInPractice.Assessment.Session do
     * `{:failed, reason}`: the session has stopped. `reason` is an
       `AiInPractice.LLM` error class, `:report_invalid`, or `:no_answers`
       (finished before answering anything).
+    * `:expired`: the report's time is up and the session is stopping, so
+      it can no longer be downloaded.
 
   ## Privacy
 
@@ -53,7 +60,8 @@ defmodule AiInPractice.Assessment.Session do
     target_ms: :timer.minutes(25),
     hard_stop_ms: :timer.minutes(40),
     max_answer_chars: 8_000,
-    report_ttl_ms: :timer.minutes(60)
+    report_ttl_ms: :timer.minutes(60),
+    reattach_ms: :timer.minutes(2)
   }
 
   defstruct [
@@ -67,6 +75,9 @@ defmodule AiInPractice.Assessment.Session do
     :started_at,
     :task,
     :report,
+    :question,
+    :orphaned_timer,
+    meta: %{},
     status: :asking,
     transcript: %Transcript{},
     covered: MapSet.new(),
@@ -85,7 +96,10 @@ defmodule AiInPractice.Assessment.Session do
   Options: `:owner`, `:llm` (an `AiInPractice.LLM` client), `:reading`
   (the reading-list items, or a zero-arity function returning them;
   default `AiInPractice.Reading.active_items/0`, called when the report is
-  written), `:limits` (a map overriding any of the defaults).
+  written), `:limits` (a map overriding any of the defaults, after those in
+  the `:assessment_limits` config), `:meta` (a map the caller wants back
+  from `attach/2` and `download/1`, such as the link's id and type; never
+  anything the person said).
   """
   @spec start(AiInPractice.RoleGroups.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def start(role_group, opts \\ []) do
@@ -120,6 +134,30 @@ defmodule AiInPractice.Assessment.Session do
   @doc "The report, once written."
   @spec report(String.t()) :: {:ok, Report.t()} | {:error, :not_ready | :not_found}
   def report(id), do: call(id, :report)
+
+  @doc """
+  The report and the session's `:meta`, for a download. Only once the
+  report is written, and only while the session lives.
+  """
+  @spec download(String.t()) :: {:ok, Report.t(), map()} | {:error, :not_ready | :not_found}
+  def download(id), do: call(id, :download)
+
+  @doc """
+  Makes `owner` the session's owner, so a LiveView that reconnected can
+  carry on. `check` is given the session's `:meta` and must return true
+  (for example, that it belongs to the same link); otherwise, or if the
+  session has gone, `{:error, :not_found}`.
+
+  Returns where the session stands: `status` (`:asking` while the next
+  question is written, `:awaiting_answer`, `:generating` or `:done`), the
+  question on screen (the map sent with `{:question, _}`, or nil), the
+  report once written, and the meta.
+  """
+  @spec attach(String.t(), (map() -> boolean()), pid()) ::
+          {:ok, %{status: atom(), question: map() | nil, report: Report.t() | nil, meta: map()}}
+          | {:error, :not_found}
+  def attach(id, check, owner \\ self()) when is_function(check, 1),
+    do: call(id, {:attach, check, owner})
 
   @doc "Stops the session and discards everything it held."
   @spec stop(String.t()) :: :ok
@@ -158,7 +196,12 @@ defmodule AiInPractice.Assessment.Session do
   @impl true
   def init({id, group, opts}) do
     owner = Keyword.fetch!(opts, :owner)
-    limits = Map.merge(@default_limits, Map.new(Keyword.get(opts, :limits, %{})))
+
+    limits =
+      @default_limits
+      |> Map.merge(Map.new(Application.get_env(:ai_in_practice, :assessment_limits, %{})))
+      |> Map.merge(Map.new(Keyword.get(opts, :limits, %{})))
+
     Logger.metadata(assessment: String.slice(id, 0, 6))
     Process.send_after(self(), :hard_stop, limits.hard_stop_ms)
 
@@ -170,6 +213,7 @@ defmodule AiInPractice.Assessment.Session do
       client: Keyword.get_lazy(opts, :llm, &LLM.client/0),
       reading: Keyword.get(opts, :reading, &AiInPractice.Reading.active_items/0),
       limits: limits,
+      meta: Keyword.get(opts, :meta, %{}),
       started_at: now()
     }
 
@@ -213,6 +257,36 @@ defmodule AiInPractice.Assessment.Session do
 
   def handle_call(:report, _from, state), do: {:reply, {:error, :not_ready}, state}
 
+  def handle_call(:download, _from, %{status: :done, report: report} = state),
+    do: {:reply, {:ok, report, state.meta}, state}
+
+  def handle_call(:download, _from, state), do: {:reply, {:error, :not_ready}, state}
+
+  def handle_call({:attach, check, owner}, _from, state) do
+    if check.(state.meta) do
+      if state.owner_ref, do: Process.demonitor(state.owner_ref, [:flush])
+      if state.orphaned_timer, do: Process.cancel_timer(state.orphaned_timer)
+
+      view = %{
+        status: state.status,
+        question: state.question,
+        report: state.report,
+        meta: state.meta
+      }
+
+      state = %{
+        state
+        | owner: owner,
+          owner_ref: Process.monitor(owner),
+          orphaned_timer: nil
+      }
+
+      {:reply, {:ok, view}, state}
+    else
+      {:reply, {:error, :not_found}, state}
+    end
+  end
+
   @impl true
   def handle_info({ref, result}, %{task: %Task{ref: ref}} = state) do
     Process.demonitor(ref, [:flush])
@@ -230,16 +304,27 @@ defmodule AiInPractice.Assessment.Session do
     fail(%{state | task: nil}, :fatal)
   end
 
+  # The owner has gone. Wait a little for it to reconnect and attach.
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_ref: ref} = state) do
-    {:stop, :normal, state}
+    state = %{state | owner: nil, owner_ref: nil}
+
+    case state.limits.reattach_ms do
+      0 -> {:stop, :normal, state}
+      ms -> {:noreply, %{state | orphaned_timer: Process.send_after(self(), :orphaned, ms)}}
+    end
   end
+
+  def handle_info(:orphaned, %{owner: nil} = state), do: {:stop, :normal, state}
 
   def handle_info(:hard_stop, %{status: status} = state)
       when status in [:asking, :awaiting_answer] do
     close(state, :time_limit)
   end
 
-  def handle_info(:expire, state), do: {:stop, :normal, state}
+  def handle_info(:expire, state) do
+    notify(state, :expired)
+    {:stop, :normal, state}
+  end
 
   # A late reply from a task that was abandoned, or a stale timer.
   def handle_info(_message, state), do: {:noreply, state}
@@ -329,21 +414,20 @@ defmodule AiInPractice.Assessment.Session do
     transcript = Transcript.ask(state.transcript, question, kind)
     main = if kind == :main, do: state.main_questions + 1, else: state.main_questions
 
-    notify(
-      state,
-      {:question,
-       %{
-         text: question,
-         number: Transcript.size(transcript),
-         kind: kind,
-         first?: Transcript.size(transcript) == 1,
-         covered: MapSet.size(state.covered)
-       }}
-    )
+    shown = %{
+      text: question,
+      number: Transcript.size(transcript),
+      kind: kind,
+      first?: Transcript.size(transcript) == 1,
+      covered: MapSet.size(state.covered)
+    }
+
+    notify(state, {:question, shown})
 
     %{
       state
       | transcript: transcript,
+        question: shown,
         main_questions: main,
         last_kind: kind,
         status: :awaiting_answer
@@ -366,7 +450,7 @@ defmodule AiInPractice.Assessment.Session do
       # The reading list is read in the task, so a database failure is
       # caught like any other and reported to the owner.
       state =
-        %{state | transcript: transcript, status: :generating}
+        %{state | transcript: transcript, status: :generating, question: nil}
         |> start_task(fn -> Report.generate(group, transcript, reading(reading), client) end)
 
       {:noreply, state}
@@ -421,6 +505,9 @@ defmodule AiInPractice.Assessment.Session do
     %{state | task: nil}
   end
 
+  # With no owner attached (it is reconnecting) the event is dropped;
+  # `attach/2` reports where the session stands instead.
+  defp notify(%{owner: nil}, _event), do: :ok
   defp notify(state, event), do: send(state.owner, {AiInPractice.Assessment, state.id, event})
 
   defp now, do: System.monotonic_time(:millisecond)
@@ -428,7 +515,13 @@ defmodule AiInPractice.Assessment.Session do
   ## Redaction
 
   defp redact_state(%__MODULE__{} = state) do
-    %{state | transcript: :redacted, report: state.report && :redacted, reading: :redacted}
+    %{
+      state
+      | transcript: :redacted,
+        report: state.report && :redacted,
+        reading: :redacted,
+        question: state.question && :redacted
+    }
   end
 
   defp redact_state(other), do: LogRedaction.scrub(other)

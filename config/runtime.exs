@@ -30,8 +30,16 @@ if api_key = System.get_env("OPENROUTER_API_KEY") do
 end
 
 # The fake model, for walking the journey without spending. Dev only.
-if config_env() == :dev and System.get_env("FAKE_LLM") in ["1", "true"] do
-  config :ai_in_practice, llm: {AiInPractice.LLM.Fake, []}
+if config_env() == :dev do
+  fake_mode = System.get_env("FAKE_LLM")
+
+  if opts = fake_mode && AiInPractice.LLM.Fake.modes()[fake_mode] do
+    config :ai_in_practice, llm: {AiInPractice.LLM.Fake, opts}
+  end
+
+  if fake_mode == "short" do
+    config :ai_in_practice, assessment_limits: %{hard_stop_ms: :timer.minutes(1)}
+  end
 end
 
 parse_ip = fn name, value ->

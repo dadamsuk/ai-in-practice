@@ -3,6 +3,8 @@ defmodule AiInPracticeWeb.DesignSystemTest do
   # rules of the system, checked against the stylesheet and rendered pages.
   use AiInPracticeWeb.ConnCase
 
+  import Phoenix.LiveViewTest
+
   alias AiInPractice.Links
 
   @css_path "assets/css/app.css"
@@ -34,6 +36,8 @@ defmodule AiInPracticeWeb.DesignSystemTest do
       conn |> get(~p"/") |> html_response(200),
       build_conn() |> get(~p"/r/#{r_token}") |> html_response(200),
       build_conn() |> get(~p"/a/#{c_token}") |> html_response(200),
+      build_conn() |> get(~p"/a/#{Links.Token.generate()}") |> html_response(404),
+      build_conn() |> get(~p"/reports/AAAAAAAAAAAAAAAAAAAAAAAA/candidate") |> html_response(404),
       admin_get.("/admin") |> html_response(200),
       admin_get.("/admin/reading") |> html_response(200)
     ]
@@ -127,5 +131,43 @@ defmodule AiInPracticeWeb.DesignSystemTest do
     for [_, value] <- Regex.scan(~r/line-height:\s*([^;]+);/, @css) do
       assert value =~ "var(--unit)", "line-height off the grid: #{value}"
     end
+  end
+
+  # The accent is the primary button's alone; a screen may show it at most
+  # twice. Walks every screen of the candidate journey on the fake model.
+  test "each screen of the candidate journey uses the accent at most twice", %{conn: conn} do
+    {:ok, recruiter, _} =
+      Links.create_recruiter_link(%{
+        firm_name: "F",
+        contact_name: "C",
+        contact_email: "c@f.example"
+      })
+
+    {:ok, _, token} = Links.mint_candidate_link(recruiter, :finance)
+    accents = &length(Regex.scan(~r/button-primary/, &1))
+
+    {:ok, view, html} = live(conn, ~p"/a/#{token}")
+    screens = [html]
+
+    view |> form("#begin-form") |> render_submit()
+    screens = [wait_for(view, "#question") | screens]
+
+    for n <- 1..5 do
+      view |> form("#answer-form", %{answer: "Answer #{n}."}) |> render_submit()
+      if n < 5, do: wait_for(view, "#question[data-number='#{n + 1}']")
+    end
+
+    screens = [wait_for(view, "#candidate-report") | screens]
+
+    for html <- screens do
+      count = accents.(html)
+      assert count in 1..2, "accent used #{count} times"
+    end
+  end
+
+  defp wait_for(view, selector) do
+    Enum.find_value(1..300, fn _ ->
+      if has_element?(view, selector), do: render(view), else: Process.sleep(10) && nil
+    end) || flunk("#{selector} never appeared")
   end
 end

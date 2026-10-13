@@ -41,5 +41,8 @@ config :phoenix,
 config :ai_in_practice,
   llm: {AiInPractice.LLM.Fake, []},
   llm_backoff_ms: [0, 0],
+  # Sessions stop as soon as their owner exits; tests that reconnect set
+  # :reattach_ms themselves.
+  assessment_limits: %{reattach_ms: 0},
   openrouter_api_key: "test-key",
   openrouter_req_options: [plug: {Req.Test, AiInPractice.LLM.OpenRouter}]

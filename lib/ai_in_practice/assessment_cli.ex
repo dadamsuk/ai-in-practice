@@ -35,14 +35,27 @@ defmodule AiInPractice.AssessmentCLI do
              reading: Keyword.get(opts, :reading, &AiInPractice.Reading.active_items/0)
            ) do
       IO.puts("A conversation for #{RoleGroups.name(group)}. Type /finish to finish early.\n")
-      # A session that has already stopped has sent its event.
-      ref = if pid = Session.whereis(id), do: Process.monitor(pid)
+      ref = monitor(id)
       result = loop(id, ref)
-      if ref, do: Process.demonitor(ref, [:flush])
+      Process.demonitor(ref, [:flush])
       result
     else
       {:error, message} when is_binary(message) -> {:error, message}
       {:error, reason} -> {:error, "could not start: #{inspect(reason)}"}
+    end
+  end
+
+  # A session that has already stopped either sent its last event, which is
+  # already in the mailbox ahead of this :DOWN, or was killed and never will.
+  defp monitor(id) do
+    case Session.whereis(id) do
+      nil ->
+        ref = make_ref()
+        send(self(), {:DOWN, ref, :process, nil, :noproc})
+        ref
+
+      pid ->
+        Process.monitor(pid)
     end
   end
 
