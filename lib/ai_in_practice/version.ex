@@ -58,5 +58,5 @@ defmodule AiInPractice.Version do
 
   @doc "The model id used for this release."
   @spec model() :: String.t()
-  def model, do: Application.fetch_env!(:ai_in_practice, :model)
+  def model,   do: Application.fetch_env!( :ai_in_practice,:model )
 end
