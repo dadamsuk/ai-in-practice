@@ -181,7 +181,7 @@ defmodule AiInPractice.Reports.PDFTest do
     pdf = PDF.render(:candidate, report, meta_fixture())
     text = text(pdf, dir)
 
-    assert text =~ "Further reading"
+    assert text =~ "Resources for your next steps"
     assert text =~ "A long one"
     assert text =~ "For finance leads."
     assert text |> String.replace(~r/[\s\x{200B}]+/u, "") |> String.contains?(url)
@@ -190,6 +190,29 @@ defmodule AiInPractice.Reports.PDFTest do
     # Broken across lines rather than run off the page.
     lines = text |> String.replace("\u200B", "") |> String.split("\n")
     assert Enum.all?(lines, &(String.length(&1) <= 100))
+  end
+
+  test "a library resource prints its facts and why it was chosen", %{tmp_dir: dir} do
+    {:ok, item} =
+      AiInPractice.Reading.create_item(%{
+        title: "AI Governance in the Boardroom",
+        url: "https://example.com/iod",
+        note: "Twelve principles as board questions.",
+        areas: [:applying_to_business],
+        author: "Institute of Directors (UK), June 2025",
+        format: "Framework",
+        cost: "Free"
+      })
+
+    picks = [%{"id" => item.id, "why" => "Take it to your next board meeting on AI."}]
+    report = report_fixture(["One."], %{"reading_picks" => picks})
+    text = text(PDF.render(:candidate, report, meta_fixture()), dir)
+
+    assert text =~ "AI Governance in the Boardroom"
+    assert text =~ "Institute of Directors (UK), June 2025 · framework · free"
+    assert text =~ "Take it to your next board meeting on AI."
+    assert text =~ "Twelve principles as board questions."
+    refute text(PDF.render(:assessor, report, meta_fixture()), dir) =~ "Boardroom"
   end
 
   describe "the signed payload" do

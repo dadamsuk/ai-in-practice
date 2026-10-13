@@ -30,6 +30,6 @@ defmodule Mix.Tasks.Assessment.TryTest do
       end)
 
     assert out =~ "SUMMARY"
-    assert out =~ "READING PICKS: [#{item.id}]"
+    assert out =~ "READING PICKS\n- #{item.id}: It picks up where your answers left off."
   end
 end

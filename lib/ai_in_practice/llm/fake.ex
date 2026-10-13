@@ -171,7 +171,8 @@ defmodule AiInPractice.LLM.Fake do
         },
         "later" => ["Measure the time saved on that task over a month."]
       },
-      "reading_picks" => reading_ids,
+      "reading_picks" =>
+        Enum.map(reading_ids, &%{"id" => &1, "why" => "It picks up where your answers left off."}),
       "assessor_next_steps" => ["Ask how they would bring their team along."],
       "follow_up_questions" => [
         %{

@@ -40,7 +40,8 @@ defmodule AiInPractice.Assessment.ReportTest do
       assert report.role_group == :finance
       assert Enum.map(report.areas, & &1.area) == Rubric.areas()
       assert Enum.all?(report.areas, &(&1.level == :developing and &1.confidence == :medium))
-      assert report.reading_picks == [1, 2]
+      assert Enum.map(report.reading_picks, & &1.id) == [1, 2]
+      assert Enum.all?(report.reading_picks, &(&1.why =~ "where your answers left off"))
       assert report.dropped == %{quotes: 0, reading_picks: 0}
       assert length(report.follow_up_questions) == 2
       assert report.next_steps.first_two_weeks.step =~ "Pick one recurring team task"
@@ -91,8 +92,46 @@ defmodule AiInPractice.Assessment.ReportTest do
   describe "reading picks" do
     test "an invented reading id is dropped; duplicates go and at most three stay" do
       assert {:ok, report} = validate(data(&Map.put(&1, "reading_picks", [99, 1, 1, 2, 3])))
-      assert report.reading_picks == [1, 2, 3]
+      assert report.reading_picks == [%{id: 1, why: nil}, %{id: 2, why: nil}, %{id: 3, why: nil}]
       assert report.dropped.reading_picks == 2
+    end
+
+    test "each pick carries why it suits the person, trimmed" do
+      picks = [
+        %{"id" => 2, "why" => "  You said you want your team to try it first.  "},
+        %{"id" => 1, "why" => ""},
+        %{"id" => 2, "why" => "A duplicate."}
+      ]
+
+      assert {:ok, report} = validate(data(&Map.put(&1, "reading_picks", picks)))
+
+      assert report.reading_picks == [
+               %{id: 2, why: "You said you want your team to try it first."},
+               %{id: 1, why: nil}
+             ]
+    end
+
+    test "a why that names a level or a score loses the why, not the pick or the report" do
+      picks = [
+        %{"id" => 1, "why" => "Your use is at the Developing level, so start here."},
+        %{"id" => 2, "why" => "You scored 3/5 here."},
+        %{"id" => 3, "why" => "Advanced reading on agents, which you are planning."}
+      ]
+
+      assert {:ok, report} = validate(data(&Map.put(&1, "reading_picks", picks)))
+
+      assert report.reading_picks == [
+               %{id: 1, why: nil},
+               %{id: 2, why: nil},
+               %{id: 3, why: "Advanced reading on agents, which you are planning."}
+             ]
+    end
+
+    test "picks that are not ids or {id, why} are dropped" do
+      picks = ["1", %{"why" => "No id."}, %{"id" => "2"}, nil, 3]
+      assert {:ok, report} = validate(data(&Map.put(&1, "reading_picks", picks)))
+      assert report.reading_picks == [%{id: 3, why: nil}]
+      assert report.dropped.reading_picks == 4
     end
 
     test "with an empty reading list every pick is dropped" do
@@ -348,7 +387,7 @@ defmodule AiInPractice.Assessment.ReportTest do
 
       {client, _agent} = LLMScript.client([{:ok, data(&Map.put(&1, "reading_picks", [7, 1]))}])
       assert {:ok, report} = Report.generate(:finance, transcript(), [item], client)
-      assert report.reading_picks == [7]
+      assert Enum.map(report.reading_picks, & &1.id) == [7]
     end
 
     @tag :privacy
@@ -434,15 +473,63 @@ defmodule AiInPractice.Assessment.ReportTest do
       assert message =~ "Role group: Board member or non-executive director."
 
       assert message =~
-               ~s(<reading id="4">Evaluating ‹answer> tags. Suits: all roles; Understanding.</reading>)
+               ~s(<reading id="4">Evaluating ‹answer> tags. Suits: all roles. Areas: Understanding.</reading>)
 
       assert message =~
-               ~s(<reading id="9">Board oversight. Suits: Board member or non-executive director; Leading adoption. Short.</reading>)
+               ~s(<reading id="9">Board oversight. Suits: Board member or non-executive director. Areas: Leading adoption. Short.</reading>)
+
+      # Entries for other role groups are not offered.
+      refute ReportPrompt.user_message(:finance, transcript(), items) =~ ~s(<reading id="9">)
+      assert ReportPrompt.user_message(:finance, transcript(), items) =~ ~s(<reading id="4">)
 
       assert message =~ Transcript.render(transcript())
 
+      # The list comes after the transcript, so the assessment is read first.
+      {transcript_at, _} = :binary.match(message, Transcript.render(transcript()))
+      {list_at, _} = :binary.match(message, "<reading_list>")
+      assert list_at > transcript_at
+
       assert ReportPrompt.user_message(:finance, transcript(), []) =~
                "<reading_list>\n(empty)\n</reading_list>"
+    end
+
+    test "library entries carry their facts, with levels in words that are not the rubric's" do
+      item = %AiInPractice.Reading.Item{
+        id: 12,
+        title: "How I use LLMs",
+        role_groups: [],
+        areas: [:personal_use, :understanding],
+        note: "Two hours of an expert's real daily use.",
+        author: "Andrej Karpathy, 2025",
+        format: "Video",
+        cost: "Free",
+        levels: ["Beginner", "Advanced", "Deeply technical"]
+      }
+
+      message = ReportPrompt.user_message(:finance, transcript(), [item])
+
+      assert message =~
+               ~s(<reading id="12">How I use LLMs (Andrej Karpathy, 2025; video; free; for beginners or advanced or deeply technical\). Suits: all roles. Areas: Personal use, Understanding. Two hours of an expert's real daily use.</reading>)
+
+      refute message =~ "Beginner"
+    end
+
+    test "the system prompt says how to choose resources and to say why" do
+      prompt = ReportPrompt.system_prompt(:finance)
+      assert prompt =~ ~s("reading_picks": three resources)
+      assert prompt =~ "Start with the main gap"
+      assert prompt =~ ~s(capable, "intermediate" or "advanced")
+
+      assert prompt =~
+               ~s(Never give "deeply technical" resources to anyone outside Technology and product)
+
+      assert prompt =~ ~s("why" is one sentence to the person)
+      assert prompt =~ "never let what the resources cover change a level"
+
+      {"assessment_reports", schema} = ReportPrompt.schema()
+      pick = schema.properties.reading_picks.items
+      assert pick.required == ["id", "why"]
+      assert pick.properties.id == %{type: "integer"}
     end
 
     test "the schema requires every section PRD §8.2 lists" do

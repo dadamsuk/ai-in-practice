@@ -96,11 +96,17 @@
   } else if b.kind == "reading" {
     block(above: u * 1.25, below: u)[
       #text(weight: "semibold")[#b.title]
+      #if b.at("meta", default: none) != none [
+        \ #mono-text(size: 7.5pt)[#b.meta]
+      ]
       #if b.url != none [
         \ #mono-text(size: 7.5pt)[#link(b.url)[#if b.url.len() > 90 { b.url.clusters().join(sym.zws) } else { b.url }]]
       ]
+      #if b.at("why", default: none) != none [
+        \ #b.why
+      ]
       #if b.note != none [
-        \ #b.note
+        \ #text(fill: quiet)[#b.note]
       ]
     ]
   }

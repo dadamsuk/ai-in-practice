@@ -156,7 +156,8 @@ defmodule AiInPractice.AssessmentCLI do
     - In the next two weeks: #{r.next_steps.first_two_weeks.step} (#{r.next_steps.first_two_weeks.how_you_will_know})
     #{Enum.map_join(r.next_steps.later, "\n", &"- #{&1}")}
 
-    READING PICKS: #{inspect(r.reading_picks)}
+    READING PICKS
+    #{Enum.map_join(r.reading_picks, "\n", &"- #{&1.id}: #{&1.why}")}
 
     FOR THE ASSESSOR
     #{Enum.map_join(r.assessor_next_steps, "\n", &"- #{&1}")}

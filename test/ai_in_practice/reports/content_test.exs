@@ -86,16 +86,56 @@ defmodule AiInPractice.Reports.ContentTest do
       })
 
     blocks = Content.candidate(report_fixture(["One."], %{"reading_picks" => [item.id]}))
-    assert "Further reading" in headings(blocks)
+    assert "Resources for your next steps" in headings(blocks)
 
     assert {:reading,
             %{
               title: "Working with AI",
               url: "https://example.com/working",
+              meta: nil,
+              why: nil,
               note: "Short and practical."
             }} in blocks
 
-    refute "Further reading" in headings(Content.candidate(report_fixture()))
+    refute "Resources for your next steps" in headings(Content.candidate(report_fixture()))
+
+    refute "Resources for your next steps" in headings(
+             Content.assessor(report_fixture(["One."], %{"reading_picks" => [item.id]}))
+           )
+  end
+
+  test "a library resource shows its facts in lower case, and why it was chosen" do
+    {:ok, item} =
+      Reading.create_item(%{
+        title: "How I use LLMs",
+        url: "https://example.com/llms",
+        areas: [:personal_use],
+        note: "Two hours of real daily use.",
+        author: "Andrej Karpathy, 2025",
+        format: "Video",
+        cost: "Free to audit"
+      })
+
+    picks = [%{"id" => item.id, "why" => "You said you want to try voice and research modes."}]
+    blocks = Content.candidate(report_fixture(["One."], %{"reading_picks" => picks}))
+
+    assert {:reading,
+            %{
+              title: "How I use LLMs",
+              url: "https://example.com/llms",
+              meta: "Andrej Karpathy, 2025 · video · free to audit",
+              why: "You said you want to try voice and research modes.",
+              note: "Two hours of real daily use."
+            }} in blocks
+
+    texts = Content.texts(blocks)
+    assert "You said you want to try voice and research modes." in texts
+    assert "Andrej Karpathy, 2025 · video · free to audit" in texts
+  end
+
+  test "the note on the assessor report says it leaves out next steps and resources" do
+    texts = Content.texts(Content.candidate(report_fixture()))
+    assert Enum.any?(texts, &(&1 =~ "does not include this report's next steps or resources"))
   end
 
   test "a reading pick removed from the list since is skipped" do
@@ -104,7 +144,7 @@ defmodule AiInPractice.Reports.ContentTest do
 
     report = report_fixture(["One."], %{"reading_picks" => [item.id]})
     {:ok, _} = Reading.delete_item(item)
-    refute "Further reading" in headings(Content.candidate(report))
+    refute "Resources for your next steps" in headings(Content.candidate(report))
   end
 
   test "the header names the role group, date, mode and kind of link, in words" do

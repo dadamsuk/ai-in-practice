@@ -523,7 +523,7 @@ defmodule AiInPractice.Assessment.SessionTest do
 
         assert_event(id, {:question, _})
         :ok = Assessment.answer(id, "One.")
-        assert_event(id, {:report, %Report{reading_picks: [5]}})
+        assert_event(id, {:report, %Report{reading_picks: [%{id: 5}]}})
       end
     end
 

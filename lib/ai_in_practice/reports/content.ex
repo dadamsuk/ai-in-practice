@@ -11,7 +11,9 @@ defmodule AiInPractice.Reports.Content do
     * `{:labelled, label, text}`: a mono label, then a paragraph
     * `{:quote, text}`: the person's own words
     * `{:list, [text]}`: a list
-    * `{:reading, %{title: _, url: _, note: _}}`: a further-reading entry
+    * `{:reading, %{title: _, url: _, meta: _, why: _, note: _}}`: a resource
+      for the person's next steps: its title and link, a line of facts
+      (author, format, cost), why it was chosen for them, and what it is
     * `{:statement, text}`: the assessor report's standing statement
 
   The header facts (`header/1`) are `{label, value}` pairs in mono.
@@ -28,7 +30,14 @@ defmodule AiInPractice.Reports.Content do
           {:h2 | :h3 | :p | :strong | :quote | :statement, String.t()}
           | {:labelled, String.t(), String.t()}
           | {:list, [String.t()]}
-          | {:reading, %{title: String.t(), url: String.t() | nil, note: String.t() | nil}}
+          | {:reading,
+             %{
+               title: String.t(),
+               url: String.t() | nil,
+               meta: String.t() | nil,
+               why: String.t() | nil,
+               note: String.t() | nil
+             }}
 
   @typedoc """
   What the report needs to know about the session: the role group, the
@@ -110,7 +119,7 @@ defmodule AiInPractice.Reports.Content do
       reading(report.reading_picks),
       {:h2, "What the assessor report contains"},
       {:p,
-       "The assessor report repeats the summary, describes each area with short quotes from your answers, says what a strong answer would have included for your role, and suggests what to explore with you next and questions to ask in person. It does not include this report's next steps or reading. You can read it in full before deciding whether to send it to anyone."}
+       "The assessor report repeats the summary, describes each area with short quotes from your answers, says what a strong answer would have included for your role, and suggests what to explore with you next and questions to ask in person. It does not include this report's next steps or resources. You can read it in full before deciding whether to send it to anyone."}
     ])
   end
 
@@ -201,14 +210,38 @@ defmodule AiInPractice.Reports.Content do
 
   defp reading([]), do: []
 
-  defp reading(ids) do
+  defp reading(picks) do
     items =
-      for id <- ids, item = Reading.get_item(id), item != nil do
-        {:reading, %{title: item.title, url: item.url, note: item.note}}
+      for %{id: id, why: why} <- picks, item = Reading.get_item(id), item != nil do
+        {:reading,
+         %{
+           title: item.title,
+           url: item.url,
+           meta: meta(item),
+           why: why,
+           note: blank_nil(item.note)
+         }}
       end
 
-    if items == [], do: [], else: [{:h2, "Further reading"} | items]
+    if items == [], do: [], else: [{:h2, "Resources for your next steps"} | items]
   end
+
+  defp meta(item) do
+    # Mono is never capitals: the format and cost are lower case.
+    facts = [
+      item.author,
+      item.format && String.downcase(item.format),
+      item.cost && String.downcase(item.cost)
+    ]
+
+    case Enum.filter(facts, &(is_binary(&1) and &1 != "")) do
+      [] -> nil
+      facts -> Enum.join(facts, " · ")
+    end
+  end
+
+  defp blank_nil(text) when is_binary(text), do: if(String.trim(text) == "", do: nil, else: text)
+  defp blank_nil(_), do: nil
 
   defp maybe(kind, text) when is_binary(text),
     do: if(String.trim(text) == "", do: [], else: {kind, text})
@@ -224,10 +257,17 @@ defmodule AiInPractice.Reports.Content do
   @spec texts([block()]) :: [String.t()]
   def texts(blocks) do
     Enum.flat_map(blocks, fn
-      {:labelled, label, text} -> [label, text]
-      {:list, items} -> items
-      {:reading, item} -> Enum.reject([item.title, item.url, item.note], &is_nil/1)
-      {_kind, text} -> [text]
+      {:labelled, label, text} ->
+        [label, text]
+
+      {:list, items} ->
+        items
+
+      {:reading, item} ->
+        Enum.reject([item.title, item.url, item.meta, item.why, item.note], &is_nil/1)
+
+      {_kind, text} ->
+        [text]
     end)
   end
 end

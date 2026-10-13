@@ -526,6 +526,21 @@ textarea {
   margin-bottom: var(--unit);
 }
 
+/* A resource in the person's report: title (a link), a mono line of
+   facts, why it was chosen for them, and what it is, in quiet ink. */
+.resource {
+  max-width: var(--measure);
+  margin: calc(var(--unit) * 2) 0;
+}
+
+.resource p {
+  margin: 0 0 calc(var(--unit) / 2);
+}
+
+.resource-meta {
+  font-size: 14px;
+}
+
 /* The conversation */
 
 /* The question on screen: serif at a generous size. */

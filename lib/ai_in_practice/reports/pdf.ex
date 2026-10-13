@@ -102,7 +102,14 @@ defmodule AiInPractice.Reports.PDF do
   defp block({:list, items}), do: %{kind: "list", items: items}
 
   defp block({:reading, item}),
-    do: %{kind: "reading", title: item.title, url: item.url, note: item.note}
+    do: %{
+      kind: "reading",
+      title: item.title,
+      url: item.url,
+      meta: item.meta,
+      why: item.why,
+      note: item.note
+    }
 
   defp block({kind, text}), do: %{kind: Atom.to_string(kind), text: text}
 

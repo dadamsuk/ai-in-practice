@@ -8,7 +8,9 @@ defmodule AiInPractice.Assessment.Report do
     * a quote that is not a verbatim substring of one of the person's
       answers (after whitespace and typographic-quote normalisation) is
       dropped;
-    * a reading pick that is not an active reading-list id is dropped;
+    * a reading pick that is not an active reading-list id is dropped, and
+      a pick's "why" that names a level or a score is dropped (the pick
+      stays);
     * a level label or a numeric score in any rendered text field rejects
       the output;
     * a missing or empty section rejects the output.
@@ -156,6 +158,15 @@ defmodule AiInPractice.Assessment.Report do
     |> List.flatten()
   end
 
+  # A pick is {"id", "why"}; a bare id (an older shape) has no why.
+  defp pick(%{"id" => id} = p) when is_integer(id), do: [%{id: id, why: why(p["why"])}]
+  defp pick(id) when is_integer(id), do: [%{id: id, why: nil}]
+  defp pick(_), do: []
+
+  defp why(text) do
+    if nonblank?(text) and not leak?(text), do: String.trim(text), else: nil
+  end
+
   defp text?(map, key) when is_map(map), do: if(nonblank?(map[key]), do: [], else: [key])
   defp text?(_map, key), do: [key]
 
@@ -222,7 +233,14 @@ defmodule AiInPractice.Assessment.Report do
       end
 
     picks = data["reading_picks"]
-    kept_picks = picks |> Enum.filter(&(&1 in reading_ids)) |> Enum.uniq() |> Enum.take(3)
+
+    kept_picks =
+      picks
+      |> Enum.flat_map(&pick/1)
+      |> Enum.filter(&(&1.id in reading_ids))
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.take(3)
+
     dropped_quotes = Enum.sum(for a <- areas, do: a.offered_quotes - length(a.quotes))
 
     %__MODULE__{

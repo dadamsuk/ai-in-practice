@@ -32,11 +32,17 @@ defmodule AiInPracticeWeb.ReportComponents do
             <li :for={item <- items}>{item}</li>
           </ul>
         <% {:reading, item} -> %>
-          <p>
-            <strong>{item.title}</strong>
-            <span :if={item.url}><br /><a href={item.url} class="mono" rel="noreferrer noopener">{item.url}</a></span>
-            <span :if={item.note}><br />{item.note}</span>
-          </p>
+          <div class="resource">
+            <p>
+              <strong :if={!item.url}>{item.title}</strong>
+              <a :if={item.url} href={item.url} rel="noreferrer noopener" target="_blank">
+                <strong>{item.title}</strong>
+              </a>
+              <span :if={item.meta} class="mono quiet resource-meta"><br />{item.meta}</span>
+            </p>
+            <p :if={item.why} class="resource-why">{item.why}</p>
+            <p :if={item.note} class="quiet">{item.note}</p>
+          </div>
       <% end %>
     <% end %>
     """

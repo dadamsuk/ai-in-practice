@@ -40,7 +40,7 @@ Third parties in the data path: Cloudflare (which fronts the site and terminates
 
 - **Prompts are built from the rubric file** (`lib/ai_in_practice/rubric.ex`), with each role group's calibration and no other group's. Snapshots of every prompt are in `test/snapshots/prompts`, so a prompt change shows up as a diff. After a deliberate change, run `UPDATE_SNAPSHOTS=1 mix test` and review the diff.
 - **Each turn** the model writes the next question from what has been said and reports which of the five areas it now judges covered. The engine steers towards the gaps and closes when every area is covered (after at least 8 main questions), or at a limit: 14 main questions, 24 turns, a token budget, or the 40-minute hard stop. The person can finish early.
-- **The report** is a separate call returning JSON for both reports. Code then checks it: a quote that is not word for word in the person's answers is dropped; a reading pick not on the curated list is dropped; a level name or a score in the text, or a missing section, means one regeneration and then an apology.
+- **The report** is a separate call returning JSON for both reports. Code then checks it: a quote that is not word for word in the person's answers is dropped; a reading pick not on the curated list is dropped (and a pick's "why" that names a level loses the why); a level name or a score in the text, or a missing section, means one regeneration and then an apology.
 
 Try it in a terminal (nothing is saved):
 
@@ -135,6 +135,16 @@ mix links usage
 # on a release (runs inside the running node)
 bin/links usage
 ```
+
+The reading list is filled from the AI Leaders Library, `priv/reading/library.json` (64 tagged resources). Import it after a deploy that changes it; importing again updates entries in place (matched by their library id, so reports keep pointing at the same entry), and makes inactive any that have left the file. Entries added by hand in `/admin/reading` are left alone.
+
+```sh
+mix reading import [PATH]     # default: priv/reading/library.json
+mix reading list
+bin/reading import            # on a release
+```
+
+The library's audience tags become role groups and its focus tags become rubric areas (see `AiInPractice.Reading.Library`). The report model is offered the entries that suit the person's role group, with their level, format, cost and author, and picks three that fit their main gap and the level they showed, each with one sentence on why it suits them. They appear in the person's own report (not the assessor's) under "Resources for your next steps", on screen and in the PDF.
 
 ## Versions in the footer
 

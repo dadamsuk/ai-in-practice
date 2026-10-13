@@ -740,8 +740,16 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
       answer(view, "One.")
       await(view, "#candidate-report")
 
-      assert has_element?(view, "#candidate-report", "Further reading")
-      assert has_element?(view, "#candidate-report a[href='#{item.url}']")
+      assert has_element?(view, "#candidate-report", "Resources for your next steps")
+
+      assert has_element?(
+               view,
+               "#candidate-report .resource a[href='#{item.url}'][target='_blank']",
+               "Working with AI"
+             )
+
+      assert has_element?(view, "#candidate-report .resource-why", "where your answers left off")
+      refute has_element?(view, "#assessor-report .resource")
       assert has_element?(view, "#candidate-report", "Short and practical.")
       refute has_element?(view, "#assessor-report", "Working with AI")
     end

@@ -15,7 +15,9 @@ defmodule AiInPractice.ReportFixtures do
         t |> Transcript.ask("Q?", :main) |> Transcript.answer(answer)
       end)
 
-    reading_ids = Map.get(changes, "reading_picks", [])
+    reading_ids =
+      changes |> Map.get("reading_picks", []) |> Enum.map(&if(is_map(&1), do: &1["id"], else: &1))
+
     payload = answers |> Fake.report(reading_ids) |> Map.merge(changes)
     {:ok, report} = Report.validate(payload, :finance, transcript, reading_ids)
     report

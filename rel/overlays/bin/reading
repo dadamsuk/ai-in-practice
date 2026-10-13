@@ -1,0 +1,14 @@
+#!/bin/sh
+# The reading-list commands on a release, run inside the running node. See
+# AiInPractice.ReadingCLI, or run with no arguments for usage. Each argument
+# is base64-encoded so that no quoting can break out of the rpc expression.
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+
+encoded=""
+for arg in "$@"; do
+  encoded="$encoded $(printf '%s' "$arg" | base64 | tr -d '\n')"
+done
+
+exec ./ai_in_practice rpc "AiInPractice.ReadingCLI.rpc(\"$encoded\")"

@@ -1,5 +1,8 @@
 defmodule AiInPractice.Eval.HarnessTest do
-  use ExUnit.Case, async: true
+  # Not async: the harness counts report rejections through a global
+  # telemetry handler, which would also count those of report tests
+  # running alongside.
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
