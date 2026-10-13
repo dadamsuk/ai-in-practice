@@ -44,7 +44,9 @@ defmodule AiInPractice.MixProject do
   end
 
   # Specifies which paths to compile per environment.
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  # The evaluation harness (eval/) is never part of a release.
+  defp elixirc_paths(:test), do: ["lib", "eval/lib", "test/support"]
+  defp elixirc_paths(:dev), do: ["lib", "eval/lib"]
   defp elixirc_paths(_), do: ["lib"]
 
   # Specifies your project dependencies.
@@ -66,6 +68,7 @@ defmodule AiInPractice.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:req, "~> 0.5"},
+      {:yaml_elixir, "~> 2.11", only: [:dev, :test]},
       {:typst, "~> 0.4.4"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},

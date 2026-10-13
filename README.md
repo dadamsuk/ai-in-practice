@@ -55,6 +55,15 @@ Set `FAKE_LLM=1` to run the dev server on the fake model (development only). To 
 - `report_invalid`: the reports cannot be written
 - `short`: a normal run with a one-minute hard stop
 
+## Evaluation
+
+`eval/` holds the persona harness (PRD §14): a second model plays a synthetic person from a YAML file in `eval/personas/` and talks to the real engine. Each persona runs several times, and the summary shows how far the internal levels spread between runs, how far they sit from the persona's true levels, and what each session cost and how long it took. It costs real inference, so a budget guard caps calls and spend per run. Transcripts and reports go to `~/ai-in-practice-eval/`, never into the repository. The harness is compiled in dev and test only. See [`eval/README.md`](eval/README.md).
+
+```sh
+mix eval.personas --fake                                  # free dry run
+OPENROUTER_API_KEY=... mix eval.personas --runs 3 --max-spend 2
+```
+
 ## The candidate journey
 
 `/a/TOKEN` is one LiveView, `lib/ai_in_practice_web/live/assessment_live.ex` (PRD §7):

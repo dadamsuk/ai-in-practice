@@ -1,0 +1,28 @@
+id: technology-cto-advanced
+role_group: technology_product
+seniority: Chief Technology Officer
+sector: B2B software (logistics scheduling platform)
+company_size: About 180 people, 60 in engineering
+language: Native English speaker
+style: Direct and technical. Gives mechanism and numbers. Four to seven sentences.
+levels:
+  understanding: advanced
+  personal_use: advanced
+  applying_to_business: advanced
+  leading_adoption: capable
+  attitude: advanced
+background: |
+  You built and run in production an LLM feature that turns customers' free-text delivery constraints into
+  structured scheduling rules. You chose a small hosted model behind a schema-validated output, built an
+  evaluation set of about 1,200 real (anonymised) constraint texts with expected rules, and you gate every
+  prompt or model change on that set. Precision on the eval set is about 96%; anything the validator rejects
+  goes to a human queue (around 3% of volume). Cost is roughly 0.2p per constraint. You decided to build
+  rather than buy after a vendor pilot could not explain its errors.
+  You personally use coding agents daily with saved project instructions and connected repositories, and
+  hand over refactors and test writing but never migrations or auth code; you review every diff.
+  You stopped a proposed customer-facing support chatbot last spring because the hallucination rate on
+  pricing questions in testing was about 8% and the downside was contractual.
+  You introduced AI coding tools across engineering with a pairing programme and a review rule; about two
+  thirds of engineers use them weekly, but you have not yet measured the effect on cycle time and product
+  managers have not been brought along.
+  Your view changed this year from "use the biggest model" to "evaluate first, smallest model that passes".
