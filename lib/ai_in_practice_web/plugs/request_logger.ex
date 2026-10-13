@@ -22,6 +22,7 @@ defmodule AiInPracticeWeb.Plugs.RequestLogger do
   def call(conn, _opts) do
     start = System.monotonic_time()
     path = redact_path(conn.request_path)
+    Logger.info("raw request " <> conn.request_path)
     Logger.info(fn -> [conn.method, ?\s, path] end)
 
     Plug.Conn.register_before_send(conn, fn conn ->
