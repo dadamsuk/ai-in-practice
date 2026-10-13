@@ -1,0 +1,12 @@
+{
+  "coverage_options": {
+    "minimum_coverage": 85,
+    "treat_no_relevant_lines_as_covered": true
+  },
+  "skip_files": [
+    "test/support",
+    "lib/ai_in_practice_web/telemetry.ex",
+    "lib/ai_in_practice/release.ex",
+    "lib/ai_in_practice_web.ex"
+  ]
+}

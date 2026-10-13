@@ -1,0 +1,20 @@
+# Sobelow (Phoenix security scan), run by `mix sobelow --config` in CI.
+#
+# Accepted exceptions:
+#   Config.CSP: Sobelow cannot see a CSP passed as a function call
+#     (SecurityHeaders.csp/0) and reports it as missing at low confidence. The
+#     CSP is set on both routers' :browser pipelines and checked by
+#     test/ai_in_practice_web/plugs/security_headers_test.exs.
+[
+  verbose: false,
+  private: false,
+  skip: false,
+  router: nil,
+  exit: "low",
+  format: "txt",
+  out: nil,
+  threshold: "low",
+  ignore: ["Config.CSP"],
+  ignore_files: [],
+  version: false
+]

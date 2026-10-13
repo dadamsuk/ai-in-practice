@@ -1,0 +1,119 @@
+# CI gates. Every push and pull request to main must pass all of these;
+# branch protection on main requires each job. `mix ci` runs the same gates
+# locally.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MIX_ENV: test
+
+jobs:
+  checks:
+    name: format, compile, credo, sobelow, audits
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-test-
+      - run: mix deps.get
+      - name: Formatting
+        run: mix format --check-formatted
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors --force
+      - name: Credo (strict)
+        run: mix credo --strict
+      - name: Sobelow (Phoenix security scan)
+        run: mix sobelow --config
+      - name: Known-vulnerable dependencies
+        run: mix deps.audit
+      - name: Retired Hex packages
+        run: mix hex.audit
+
+  test:
+    name: tests, coverage, privacy gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-test-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-test-
+      - run: mix deps.get
+      - name: Privacy gate (no transcript, report or token data in logs, disk or database)
+        run: mix test --only privacy
+      - name: No third-party assets
+        run: mix test --only third_party_assets
+      - name: Tests with coverage floor (85%)
+        run: mix coveralls
+
+  dialyzer:
+    name: dialyzer
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        id: beam
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-dev-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-dev-
+      - name: Restore PLTs
+        uses: actions/cache/restore@v4
+        id: plt-cache
+        with:
+          path: priv/plts
+          key: plt-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: plt-${{ runner.os }}-
+      - run: mix deps.get
+      - name: Build PLTs
+        if: steps.plt-cache.outputs.cache-hit != 'true'
+        run: mkdir -p priv/plts && mix dialyzer --plt
+      - name: Save PLTs
+        if: steps.plt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: priv/plts
+          key: ${{ steps.plt-cache.outputs.cache-primary-key }}
+      - name: Dialyzer
+        run: mix dialyzer --format github
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the release image (no push)
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t ai-in-practice:ci .

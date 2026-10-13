@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Drive the BrowserHost browser on bigwhite against this app (see CLAUDE.md).
+#
+#   script/browser-check open http://100.88.155.65:4100/   any agent-browser command
+#   script/browser-check shot home                          screenshot to tmp/browser/home.png
+#
+# BROWSERHOST (default bigwhite) and BROWSER_SESSION (default ai-in-practice)
+# override the host and session.
+set -euo pipefail
+
+host="${BROWSERHOST:-bigwhite}"
+session="${BROWSER_SESSION:-ai-in-practice}"
+cdp="ws://${host}:9000/cdp?session=${session}&who=claude@dedev"
+out_dir="$(cd "$(dirname "$0")/.." && pwd)/tmp/browser"
+
+if [ $# -eq 0 ]; then
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  exit 64
+fi
+
+if [ "$1" = "shot" ]; then
+  name="${2:-}"
+  if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "shot needs a name of letters, digits, '.', '_' or '-'" >&2
+    exit 64
+  fi
+  mkdir -p "$out_dir"
+  exec agent-browser --cdp "$cdp" screenshot "${out_dir}/${name}.png"
+fi
+
+exec agent-browser --cdp "$cdp" "$@"
