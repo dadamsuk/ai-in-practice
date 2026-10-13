@@ -314,12 +314,43 @@ textarea {
   font-family: var(--serif);
   font-size: 18px;
   line-height: calc(var(--unit) * 2);
-  padding: calc(var(--unit) / 2) 0;
+  padding: calc(var(--unit) / 2) var(--unit);
   color: var(--ink);
   background: var(--ground);
-  border: 0;
-  border-bottom: 2px solid var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 0;
   appearance: none;
+}
+
+/* A control is drawn as one at all times, not only with focus: a full
+   ink border. Focus thickens it. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 0;
+}
+
+/* A drop-down shows its arrow: a solid triangle drawn with borders, at
+   the right of the box. The select leaves room for it. */
+.select {
+  position: relative;
+}
+
+.select select {
+  padding-right: calc(var(--unit) * 4);
+  cursor: pointer;
+}
+
+.select::after {
+  content: "";
+  position: absolute;
+  right: calc(var(--unit) * 1.5);
+  bottom: calc(var(--unit) * 1.5 - 3px);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid var(--ink);
+  pointer-events: none;
 }
 
 /* The file picker's own button, drawn as a plain button: the browser's
@@ -344,8 +375,8 @@ textarea {
 }
 
 [aria-invalid="true"] {
-  border-bottom-color: var(--ink);
-  border-bottom-width: 3px;
+  border-color: var(--ink);
+  border-width: 3px;
 }
 
 .field-error {
@@ -473,6 +504,28 @@ textarea {
   background: var(--band);
 }
 
+/* "More details": fuller text folded under a short line, opened in
+   place. The summary reads as a link; the browser's marker is dropped. */
+.more {
+  max-width: var(--measure);
+  margin: var(--unit) 0;
+}
+
+.more summary {
+  display: block;
+  list-style: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.more summary::-webkit-details-marker {
+  display: none;
+}
+
+.more[open] summary {
+  margin-bottom: var(--unit);
+}
+
 /* The conversation */
 
 /* The question on screen: serif at a generous size. */
@@ -482,6 +535,12 @@ textarea {
   font-weight: 400;
   max-width: var(--measure);
   margin: calc(var(--unit) * 2) 0 calc(var(--unit) * 2);
+}
+
+/* Once an answer is sent, the question steps back until the next one
+   arrives. */
+.question-answered {
+  color: var(--ink-quiet);
 }
 
 /* Focus is moved here so the question is read out; it is not a control,
@@ -504,6 +563,17 @@ textarea {
   font-weight: 600;
   color: var(--accent);
   margin: var(--unit) 0;
+}
+
+/* The recording light: a solid accent square before the words, on while
+   the microphone is live. */
+.recording::before {
+  content: "";
+  display: inline-block;
+  width: var(--unit);
+  height: var(--unit);
+  margin-right: var(--unit);
+  background: var(--accent);
 }
 
 /* A quiet progress rule: five band segments, filled in ink. */

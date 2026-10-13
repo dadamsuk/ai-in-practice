@@ -20,6 +20,8 @@ defmodule AiInPractice.LLM.Fake do
   person sees the answer or the report come back unsent, and sending again
   works. The tries are counted per request and answer, in
   `:persistent_term`, so this is for development only.
+  `:report_delay_ms` makes the report take that long, to watch the
+  writing screen.
   `modes/0` names the combinations `FAKE_LLM` selects.
   """
 
@@ -45,6 +47,7 @@ defmodule AiInPractice.LLM.Fake do
     "fail_mid" => [fail_turn: {2, :fatal}],
     "report_invalid" => [fail_report: :report_invalid],
     "flaky" => [flaky: {2, :transient, 3}],
+    "slow" => [report_delay_ms: 20_000],
     "short" => []
   }
 
@@ -52,7 +55,8 @@ defmodule AiInPractice.LLM.Fake do
   The `FAKE_LLM` values (dev only): `1` (a normal run), `spend_refused`
   (refused before the first question), `fail_mid` (fails after two
   questions), `report_invalid` (the report cannot be written), `flaky` (the
-  third question and the report come back unsent once each) and `short`
+  third question and the report come back unsent once each), `slow` (the
+  report takes 20 seconds) and `short`
   (a normal run; `config/runtime.exs` also sets a one-minute hard stop).
   """
   @spec modes() :: %{String.t() => keyword()}
@@ -83,6 +87,8 @@ defmodule AiInPractice.LLM.Fake do
   end
 
   defp default(%{purpose: :report} = request, opts) do
+    if delay = Keyword.get(opts, :report_delay_ms), do: Process.sleep(delay)
+
     case {Keyword.get(opts, :fail_report), Keyword.get(opts, :flaky)} do
       # Missing every section, so it is rejected twice, as a real one would be.
       {:report_invalid, _} ->

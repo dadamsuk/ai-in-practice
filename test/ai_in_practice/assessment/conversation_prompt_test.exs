@@ -68,9 +68,22 @@ defmodule AiInPractice.Assessment.ConversationPromptTest do
       refute prompt =~ "Set-up screen"
     end
 
+    test "asks for specific examples, and follows up an answer that lacks detail" do
+      prompt = ConversationPrompt.system_prompt(:finance)
+      assert prompt =~ "asks for a specific example"
+      assert prompt =~ "told to give specific examples and go into detail"
+
+      assert prompt =~
+               "your next question is a follow-up that asks for the detail that is missing"
+
+      assert prompt =~ "which tool, and what came of it"
+      # Still bounded: one follow-up, then thin evidence is recorded.
+      assert prompt =~ "thin evidence is recorded, not chased"
+    end
+
     test "sets the conversation rules: one follow-up, no praise, no abstract governance, no 'interview'" do
       prompt = ConversationPrompt.system_prompt(:ceo_gm)
-      assert prompt =~ "ask once for a specific instance"
+      assert prompt =~ "Ask one follow-up at most per main question"
       assert prompt =~ "No praise"
       assert prompt =~ "Never ask abstract questions about governance, ethics"
       assert prompt =~ ~s(Never use the words "interview")

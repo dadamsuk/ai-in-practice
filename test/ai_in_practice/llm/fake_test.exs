@@ -65,6 +65,15 @@ defmodule AiInPractice.LLM.FakeTest do
     assert {:ok, %{data: %{"areas" => _}}} = Fake.request(report, opts)
   end
 
+  test ":report_delay_ms holds the report back, and not a turn" do
+    {micros, result} = :timer.tc(fn -> Fake.request(@report, report_delay_ms: 50) end)
+    assert {:ok, %{data: %{"areas" => _}}} = result
+    assert micros >= 50_000
+
+    {micros, _} = :timer.tc(fn -> Fake.request(turn(0), report_delay_ms: 5_000) end)
+    assert micros < 1_000_000
+  end
+
   test "the FAKE_LLM modes" do
     modes = Fake.modes()
     assert modes["1"] == []
@@ -73,6 +82,7 @@ defmodule AiInPractice.LLM.FakeTest do
     assert modes["report_invalid"] == [fail_report: :report_invalid]
     assert modes["short"] == []
     assert modes["flaky"] == [flaky: {2, :transient, 3}]
+    assert modes["slow"] == [report_delay_ms: 20_000]
     refute Map.has_key?(modes, "0")
   end
 end

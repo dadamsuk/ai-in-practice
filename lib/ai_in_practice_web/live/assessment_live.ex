@@ -51,6 +51,13 @@ defmodule AiInPracticeWeb.AssessmentLive do
   @max_recording_ms :timer.minutes(5)
   @max_audio_bytes 16_000_000
 
+  # The bar shown while the reports are written. The model gives no
+  # progress, so the bar follows the clock: it fills quickly at first and
+  # slows, 1 - e^(-t/tau), and never fills its last step until the reports
+  # arrive. Reports take 10 to 40 seconds; tau is 15 seconds.
+  @writing_steps 20
+  @writing_tick_ms 1_000
+
   @impl true
   def mount(params, session, socket) do
     token = token(params, session)
@@ -77,7 +84,10 @@ defmodule AiInPracticeWeb.AssessmentLive do
         voice?: false,
         voice: :idle,
         voice_error: nil,
-        max_recording_ms: @max_recording_ms
+        max_recording_ms: @max_recording_ms,
+        writing_steps: @writing_steps,
+        writing_since: nil,
+        writing_done: 0
       )
 
     attach = connected?(socket) && get_connect_params(socket)["attach"]
@@ -125,7 +135,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
   end
 
   defp resume(socket, %{status: :done, report: report}), do: show_reports(socket, report)
-  defp resume(socket, %{status: :generating}), do: assign(socket, phase: :generating)
+  defp resume(socket, %{status: :generating}), do: writing(socket)
 
   defp resume(socket, %{status: :report_not_written}),
     do: assign(socket, phase: :report_not_written, question: nil)
@@ -237,7 +247,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   def handle_event("retry_report", _params, %{assigns: %{phase: :report_not_written}} = socket) do
     case Assessment.retry_report(socket.assigns.session_id) do
-      :ok -> {:noreply, assign(socket, phase: :generating)}
+      :ok -> {:noreply, writing(socket)}
       {:error, :not_waiting} -> {:noreply, socket}
       {:error, :not_found} -> {:noreply, failed(socket, :fatal)}
     end
@@ -246,7 +256,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
   def handle_event("finish", _params, %{assigns: %{phase: phase}} = socket)
       when phase in [:question, :thinking] do
     case Assessment.finish_early(socket.assigns.session_id) do
-      :ok -> {:noreply, assign(socket, phase: :generating, closed: :finished_early)}
+      :ok -> {:noreply, socket |> assign(closed: :finished_early) |> writing()}
       {:error, _} -> {:noreply, socket}
     end
   end
@@ -396,7 +406,33 @@ defmodule AiInPracticeWeb.AssessmentLive do
       else: {:noreply, failed(socket, :fatal)}
   end
 
+  def handle_info(:writing_tick, %{assigns: %{phase: :generating}} = socket) do
+    Process.send_after(self(), :writing_tick, @writing_tick_ms)
+    {:noreply, assign(socket, writing_done: writing_done(socket.assigns.writing_since))}
+  end
+
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # Into the writing phase, starting the bar's clock once: closing and
+  # finishing early can both arrive here.
+  defp writing(%{assigns: %{phase: :generating}} = socket), do: socket
+
+  defp writing(socket) do
+    if connected?(socket), do: Process.send_after(self(), :writing_tick, @writing_tick_ms)
+
+    assign(socket,
+      phase: :generating,
+      writing_since: System.monotonic_time(:millisecond),
+      writing_done: 0
+    )
+  end
+
+  defp writing_done(since) do
+    elapsed = System.monotonic_time(:millisecond) - since
+    tau = Application.get_env(:ai_in_practice, :report_progress_tau_ms, 15_000)
+    fraction = 1 - :math.exp(-elapsed / tau)
+    min(trunc(fraction * @writing_steps), @writing_steps - 1)
+  end
 
   defp on_event({:question, question}, socket) do
     case start_link(socket, question) do
@@ -417,7 +453,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
   end
 
   defp on_event({:closed, reason}, socket),
-    do: assign(socket, phase: :generating, closed: reason, question: nil)
+    do: socket |> assign(closed: reason, question: nil) |> writing()
 
   defp on_event({:report, report}, socket) do
     _ = Links.mark_completed(socket.assigns.link)
@@ -565,45 +601,52 @@ defmodule AiInPracticeWeb.AssessmentLive do
       sent you this link. They can see whether you have started and completed it. They see nothing you write unless you send them the assessor report yourself.
     </p>
 
-    <h2>What this is</h2>
-    <p>
-      A conversation starter. It makes no decision about you, and there are no scores. You get a private report with next steps, and an assessor report that you can read first and then choose whether to send on.
-    </p>
-
-    <h2>Before you begin</h2>
-    <ul id="before-you-begin">
-      <li :if={!@link.quick}>It takes about 20 to 25 minutes, and stops after 40 at most.</li>
-      <li :if={@link.quick}>It takes about three minutes, and stops after eight at most.</li>
-      <li>
-        You have one attempt. Closing or reloading this page ends the conversation, and the link cannot be opened again.
+    <ul id="essentials">
+      <li id="be-specific">
+        <strong>Be specific.</strong>
+        Give real examples and go into detail: what you did, which tools, and what happened. The more detail you give, the more useful your reports.
       </li>
-      <li>You may leave out the names of clients and employers, and give figures as ranges.</li>
-      <li :if={!@voice?}>
-        Type your answers. Pasting is turned off, but your computer's dictation works.
-      </li>
-      <li :if={@voice?} id="voice-offered">
-        Type your answers, or speak them and correct the text before you send it. Pasting is turned off, but your computer's dictation works.
-      </li>
-      <li>You can finish early at any point.</li>
+      <li>You have one attempt. Closing or reloading this page ends it.</li>
+      <li>Nothing you write is kept once you close the page.</li>
     </ul>
 
-    <h2>How your answers are handled</h2>
-    <p id="data-handling">
-      Your answers and reports are held in this server's memory only while this page is open. They are never written to disk, to a database or to a log. On the way they pass through Cloudflare, which secures the connection to this site. To write the questions and the reports, your answers are sent through OpenRouter to the AI model's provider, with zero data retention. When you close this page, they are gone.
-    </p>
-    <p id="legal">
-      The <.link href={~p"/privacy"} target="_blank" rel="noopener">privacy notice</.link>
-      sets out exactly what is kept and what is not, and the
-      <.link href={~p"/terms"} target="_blank" rel="noopener">terms</.link>
-      explain why this is never an automated decision about you. Both open in a new tab.
-    </p>
+    <details id="more-about" class="more">
+      <summary>More details: what this is and how it works</summary>
+      <p>
+        A conversation starter. It makes no decision about you, and there are no scores. You get a private report with next steps, and an assessor report that you can read first and then choose whether to send on.
+      </p>
+      <ul id="before-you-begin">
+        <li :if={!@link.quick}>It takes about 20 to 25 minutes, and stops after 40 at most.</li>
+        <li :if={@link.quick}>It takes about three minutes, and stops after eight at most.</li>
+        <li>
+          You have one attempt. Closing or reloading this page ends the conversation, and the link cannot be opened again.
+        </li>
+        <li>You may leave out the names of clients and employers, and give figures as ranges.</li>
+        <li :if={!@voice?}>
+          Type your answers. Pasting is turned off, but your computer's dictation works.
+        </li>
+        <li :if={@voice?} id="voice-offered">
+          Type your answers, or speak them and correct the text before you send it. Pasting is turned off, but your computer's dictation works.
+        </li>
+        <li>You can finish early at any point, though your reports will be less accurate.</li>
+      </ul>
+    </details>
 
-    <%= if @voice? do %>
-      <h2>Typing or speaking</h2>
-      <p id="voice-handling">
+    <details id="more-handling" class="more">
+      <summary>More details: how your answers are handled</summary>
+      <p id="data-handling">
+        Your answers and reports are held in this server's memory only while this page is open. They are never written to disk, to a database or to a log. On the way they pass through Cloudflare, which secures the connection to this site. To write the questions and the reports, your answers are sent through OpenRouter to the AI model's provider, with zero data retention. When you close this page, they are gone.
+      </p>
+      <p :if={@voice?} id="voice-handling">
         If you choose to speak, each recording goes to DSC's own transcription service, is turned into text and is deleted at once. It is never stored. You see the text and can correct it before you send it, and you can type instead at any point. The questions are only ever shown on screen. Your reports say whether your answers were typed or spoken, and transcription slips never count against you.
       </p>
-    <% end %>
+    </details>
+
+    <p id="legal">
+      The <.link href={~p"/privacy"} target="_blank" rel="noopener">privacy notice</.link>
+      and <.link href={~p"/terms"} target="_blank" rel="noopener">terms</.link>
+      set out what is kept and why this is never an automated decision about you. Both open in a new tab.
+    </p>
 
     <.form for={@role_form} id="begin-form" phx-submit="begin">
       <%= if @link.kind == :individual do %>
@@ -642,17 +685,17 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   defp phase(%{phase: :opening} = assigns) do
     ~H"""
-    <.progress covered={0} />
+    <.progress done={0} />
     <p class="lede" role="status" id="status">Your first question is being written.</p>
     """
   end
 
   defp phase(%{phase: phase} = assigns) when phase in [:question, :thinking] do
     ~H"""
-    <.progress covered={@question.covered} />
+    <.progress done={@question.covered} />
     <h1
       id="question"
-      class="question"
+      class={["question", @phase == :thinking && "question-answered"]}
       tabindex="-1"
       phx-hook=".Question"
       data-number={@question.number}
@@ -678,6 +721,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
             maxlength={@max_answer_chars}
             phx-hook=".AnswerBox"
             phx-debounce="blur"
+            data-voice={@voice}
             aria-describedby="answer-help"
             aria-invalid={@answer_error && "true"}
           >{@answer}</textarea>
@@ -685,6 +729,9 @@ defmodule AiInPracticeWeb.AssessmentLive do
             {@answer_error}
           </p>
           <p id="answer-help" class="quiet">
+            <span :if={!@paste_note} id="be-specific-hint">
+              Give a real example and go into detail: what you did, which tools, what happened.
+            </span>
             <span :if={!@paste_note && @meta.mode == :voice}>
               Record, or type. Check the text and correct anything misheard before you send it.
             </span>
@@ -696,7 +743,12 @@ defmodule AiInPracticeWeb.AssessmentLive do
             </span>
           </p>
         </div>
-        <.button variant="primary" id="send" disabled={@voice == :transcribing}>
+        <.button
+          variant="primary"
+          id="send"
+          disabled={String.trim(@answer) == "" or @voice != :idle}
+          phx-mounted={JS.ignore_attributes(["disabled"])}
+        >
           Send answer
         </.button>
       </.form>
@@ -713,6 +765,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
     >
       Finish early
     </.button>
+    <p class="quiet" id="finish-note">Your report will be less accurate.</p>
 
     <script :type={Phoenix.LiveView.ColocatedHook} name=".Question">
       // Move focus to each new question, so it is read out and the person
@@ -724,11 +777,23 @@ defmodule AiInPracticeWeb.AssessmentLive do
     </script>
     <script :type={Phoenix.LiveView.ColocatedHook} name=".AnswerBox">
       // Paste and drop are refused (PRD §7); typing and dictation are not.
+      // Send is enabled only while there is something to send and no
+      // recording is under way. The draft reaches the server only on blur,
+      // so the button's disabled state is kept here (the server's renders
+      // leave it alone).
       export default {
         mounted() {
           const refuse = (e) => { e.preventDefault(); this.pushEvent("paste_refused", {}) }
           this.el.addEventListener("paste", refuse)
           this.el.addEventListener("drop", refuse)
+          this.el.addEventListener("input", () => this.gate())
+          this.gate()
+        },
+        updated() { this.gate() },
+        gate() {
+          const send = document.getElementById("send")
+          if (!send) return
+          send.disabled = this.el.value.trim() === "" || this.el.dataset.voice !== "idle"
         }
       }
     </script>
@@ -758,6 +823,12 @@ defmodule AiInPracticeWeb.AssessmentLive do
     <p :if={@closed == :time_limit} id="time-up">
       The {hard_stop_minutes(@meta)} minutes are up, so the conversation has closed.
     </p>
+    <.progress
+      id="writing-progress"
+      label="writing your reports"
+      steps={@writing_steps}
+      done={@writing_done}
+    />
     <p class="lede" role="status" id="status">
       This usually takes under a minute. Please keep this page open.
     </p>
@@ -860,21 +931,25 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   ## Components
 
-  attr :covered, :integer, required: true
+  attr :id, :string, default: "progress"
+  attr :label, :string, default: "progress through the conversation"
+  attr :steps, :integer, default: 5
+  attr :done, :integer, required: true
 
-  # A quiet rule of five segments, filled as the conversation moves on.
+  # A quiet rule of segments, filled as things move on: the five areas of
+  # the conversation, or the time the reports are taking to write.
   defp progress(assigns) do
     ~H"""
     <div
       class="progress"
-      id="progress"
+      id={@id}
       role="progressbar"
-      aria-label="progress through the conversation"
+      aria-label={@label}
       aria-valuemin="0"
-      aria-valuemax="5"
-      aria-valuenow={@covered}
+      aria-valuemax={@steps}
+      aria-valuenow={@done}
     >
-      <span :for={i <- 1..5} class={["progress-step", i <= @covered && "progress-done"]}></span>
+      <span :for={i <- 1..@steps} class={["progress-step", i <= @done && "progress-done"]}></span>
     </div>
     """
   end

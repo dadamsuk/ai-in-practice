@@ -161,6 +161,9 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
 
       view |> element("#voice") |> render_hook("recording", %{})
       assert has_element?(view, "#recording.recording", "Recording.")
+      # Send waits until the recording is done and turned into text.
+      assert has_element?(view, "#answer-form textarea[data-voice='recording']")
+      assert has_element?(view, "#send[disabled]")
 
       # The design rule: the accent at most twice on a screen (the send
       # button and the recording indicator).
@@ -179,6 +182,10 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
       assert text == Fake.text()
 
       await(view, "#record")
+      # The text is in the box (the browser's hook enables send as it
+      # arrives); the server enables it too once the draft reaches it.
+      assert has_element?(view, "#answer-form textarea[data-voice='idle']")
+      view |> form("#answer-form", %{answer: text}) |> render_change()
       refute has_element?(view, "#send[disabled]")
       refute has_element?(view, "#voice-error")
 
@@ -273,7 +280,7 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
         assert has_element?(view, "#voice-error[role='alert']", unquote(message))
         assert has_element?(view, "#voice-error", "type your answer")
         assert has_element?(view, "#record")
-        refute has_element?(view, "#send[disabled]")
+        assert has_element?(view, "#answer-form textarea[data-voice='idle']")
 
         view |> form("#answer-form", %{answer: "Typed instead."}) |> render_submit()
         await(view, "#question[data-number='2']")

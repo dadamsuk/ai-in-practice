@@ -122,11 +122,30 @@ defmodule AiInPracticeWeb.DesignSystemTest do
 
   test "the accent is used only by the primary button and the recording indicator" do
     uses = Regex.scan(~r/var\(--accent\)/, @css)
-    assert length(uses) == 3
+    assert length(uses) == 4
     assert @css =~ ~r/\.button-primary \{[^}]*var\(--accent\)[^}]*var\(--accent\)/
     # Never on small type: the indicator is full size and bold.
     assert @css =~
              ~r/\.recording \{[^}]*font-size: 18px;[^}]*font-weight: 600;[^}]*var\(--accent\)/
+
+    # The recording light: a solid square of the accent, a unit across, on
+    # the same element as the words, so it adds no use to the screen.
+    assert @css =~
+             ~r/\.recording::before \{[^}]*width: var\(--unit\);[^}]*height: var\(--unit\);[^}]*background: var\(--accent\);/
+  end
+
+  test "controls look like controls without focus: a full border, and a drop-down arrow" do
+    assert @css =~
+             ~r/select,\ntextarea \{[^}]*border: 2px solid var\(--ink\);[^}]*border-radius: 0;/
+
+    refute @css =~ ~r/select,\ntextarea \{[^}]*border: 0;/
+    # The arrow is a triangle drawn with borders: no icon, no image.
+    assert @css =~ ~r/\.select::after \{[^}]*border-top: 8px solid var\(--ink\);/
+    assert @css =~ ~r/\.select select \{[^}]*padding-right:/
+  end
+
+  test "a sent question is drawn in the quiet ink" do
+    assert @css =~ ~r/\.question-answered \{\s*color: var\(--ink-quiet\);/
   end
 
   test "rules: 3px ink for structure, 2px hairline for separators" do

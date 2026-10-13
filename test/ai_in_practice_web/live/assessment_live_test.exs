@@ -98,6 +98,53 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
   end
 
   describe "start screen" do
+    test "is short: three essentials up front, the rest under More details", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      {:ok, view, _html} = live(conn, ~p"/a/#{token}")
+
+      assert has_element?(view, "#essentials > li", "Be specific.")
+      assert has_element?(view, "#be-specific", "what you did, which tools, and what happened")
+      assert has_element?(view, "#essentials > li", "You have one attempt.")
+      assert has_element?(view, "#essentials > li", "Nothing you write is kept")
+
+      assert view
+             |> element("#essentials")
+             |> render()
+             |> then(&Regex.scan(~r/<li/, &1))
+             |> length() == 3
+
+      # The fuller text is all still there, folded away and closed.
+      assert has_element?(view, "details#more-about:not([open]) > summary", "More details")
+      assert has_element?(view, "details#more-about #before-you-begin", "20 to 25 minutes")
+      assert has_element?(view, "details#more-about", "no scores")
+      assert has_element?(view, "details#more-about", "less accurate")
+      assert has_element?(view, "details#more-handling:not([open]) > summary", "More details")
+      assert has_element?(view, "details#more-handling #data-handling", "zero data retention")
+
+      # The legal links stay in view, outside the folds.
+      refute has_element?(view, "details #legal")
+      assert has_element?(view, "#legal a[href='/privacy']")
+    end
+
+    test "the answer box always asks for a real example and detail", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      view = begin(conn, token)
+      await(view, "#question")
+      assert has_element?(view, "#answer-help #be-specific-hint", "Give a real example")
+    end
+
+    test "the role drop-down sits in a .select box, which draws its arrow", %{conn: conn} do
+      {_link, token} = individual_link_fixture()
+      {:ok, view, _html} = live(conn, ~p"/a/#{token}")
+      assert has_element?(view, "#begin-form .select > select[name='role_group']")
+    end
+
     test "a recruiter's link shows who sent it, the role group and what to expect", %{
       conn: conn,
       recruiter: recruiter
@@ -372,6 +419,136 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
 
       await(view, "#candidate-report")
       assert has_element?(view, "#time-up", "The 40 minutes were up")
+    end
+  end
+
+  describe "the question screen's controls" do
+    test "send is disabled until there is an answer, and the browser keeps it so", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      view = begin(conn, token)
+      await(view, "#question")
+
+      assert has_element?(view, "#send[disabled]")
+      assert has_element?(view, "#send[phx-mounted*='ignore_attrs']")
+      assert has_element?(view, "#answer-1[phx-hook$='AnswerBox'][data-voice='idle']")
+
+      view |> form("#answer-form", %{answer: "   "}) |> render_change()
+      assert has_element?(view, "#send[disabled]")
+
+      view |> form("#answer-form", %{answer: "I drafted a paper."}) |> render_change()
+      refute has_element?(view, "#send[disabled]")
+    end
+
+    test "a sent answer greys the question until the next one arrives", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      use_script([LLMScript.turn("Q1"), gated(LLMScript.turn("Q2"))])
+
+      view = begin(conn, token)
+      await(view, "#question")
+      refute has_element?(view, "#question.question-answered")
+
+      answer(view, "One.")
+      assert_receive {:requested, task}, 1000
+      assert has_element?(view, "#question.question-answered", "Q1")
+      assert has_element?(view, "#status", "The next question is being written.")
+
+      send(task, :go)
+      await(view, "#question[data-number='2']")
+      refute has_element?(view, "#question.question-answered")
+    end
+
+    test "finish early says the report will be less accurate", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      view = begin(conn, token)
+      await(view, "#question")
+      assert has_element?(view, "#finish + #finish-note", "Your report will be less accurate.")
+    end
+  end
+
+  describe "writing the reports" do
+    setup do
+      tau = Application.get_env(:ai_in_practice, :report_progress_tau_ms)
+      on_exit(fn -> Application.put_env(:ai_in_practice, :report_progress_tau_ms, tau) end)
+    end
+
+    test "a progress bar fills with the time taken, stopping short until the reports come", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+
+      use_script([
+        LLMScript.turn("Q1"),
+        LLMScript.turn("", [], close: true),
+        gated({:ok, Fake.report(["One."])})
+      ])
+
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "One.")
+      assert_receive {:requested, task}, 1000
+
+      assert has_element?(view, "#writing-progress[role='progressbar'][aria-valuemax='20']")
+      assert has_element?(view, "#writing-progress[aria-valuenow='0']")
+      assert has_element?(view, "#writing-progress[aria-label='writing your reports']")
+      refute has_element?(view, "#writing-progress .progress-done")
+
+      # A long wait: the bar is nearly full but never complete.
+      Application.put_env(:ai_in_practice, :report_progress_tau_ms, 1)
+      Process.sleep(5)
+      send(view.pid, :writing_tick)
+      assert has_element?(view, "#writing-progress[aria-valuenow='19']")
+      assert view |> render() |> then(&Regex.scan(~r/progress-done/, &1)) |> length() == 19
+
+      send(task, :go)
+      await(view, "#candidate-report")
+      refute has_element?(view, "#writing-progress")
+
+      # A tick still on its way after the reports arrive changes nothing.
+      send(view.pid, :writing_tick)
+      assert has_element?(view, "#candidate-report")
+    end
+
+    test "the bar starts empty and moves part-way with a normal pace", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      Application.put_env(:ai_in_practice, :report_progress_tau_ms, 100)
+
+      use_script([
+        LLMScript.turn("Q1"),
+        LLMScript.turn("Q2"),
+        gated({:ok, Fake.report(["One."])})
+      ])
+
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "One.")
+      await(view, "#question[data-number='2']")
+      view |> element("#finish") |> render_click()
+      assert_receive {:requested, task}, 1000
+      assert has_element?(view, "#writing-progress[aria-valuenow='0']")
+
+      Process.sleep(70)
+      send(view.pid, :writing_tick)
+
+      [_, done] =
+        Regex.run(~r/aria-valuenow="(\d+)"/, view |> element("#writing-progress") |> render())
+
+      assert String.to_integer(done) in 5..18
+
+      send(task, :go)
+      await(view, "#candidate-report")
     end
   end
 

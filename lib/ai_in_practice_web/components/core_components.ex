@@ -164,16 +164,18 @@ defmodule AiInPracticeWeb.CoreComponents do
     ~H"""
     <div class="field">
       <label :if={@label} for={@id} class="field-label">{@label}</label>
-      <select
-        id={@id}
-        name={@name}
-        multiple={@multiple}
-        aria-invalid={@errors != [] && "true"}
-        {@rest}
-      >
-        <option :if={@prompt} value="">{@prompt}</option>
-        {Form.options_for_select(@options, @value)}
-      </select>
+      <div class={!@multiple && "select"}>
+        <select
+          id={@id}
+          name={@name}
+          multiple={@multiple}
+          aria-invalid={@errors != [] && "true"}
+          {@rest}
+        >
+          <option :if={@prompt} value="">{@prompt}</option>
+          {Form.options_for_select(@options, @value)}
+        </select>
+      </div>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
