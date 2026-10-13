@@ -39,11 +39,52 @@ defmodule AiInPractice.LLMTest do
     capture_log(fn -> assert {:error, :transient} = LLM.complete(request, client) end)
     assert LLMScript.calls(agent) == 3
 
-    for class <- [:spend_refused, :rate_limited, :fatal] do
+    for class <- [:spend_refused, :fatal] do
       {client, agent} = LLMScript.client([{:error, class}, {:ok, %{}}])
       capture_log(fn -> assert {:error, ^class} = LLM.complete(request, client) end)
       assert LLMScript.calls(agent) == 1
     end
+  end
+
+  test "retries rate limits on their own budget, up to the rate-limit backoff list" do
+    request = %{purpose: :turn, messages: []}
+
+    {client, agent} =
+      LLMScript.client([{:error, :rate_limited}, {:error, :rate_limited}, {:ok, %{"a" => 1}}])
+
+    log =
+      capture_log(fn -> assert {:ok, %{data: %{"a" => 1}}} = LLM.complete(request, client) end)
+
+    assert LLMScript.calls(agent) == 3
+    assert log =~ "llm turn rate_limited failure, retrying"
+
+    # Three retries, so four attempts, then the class comes back.
+    {client, agent} = LLMScript.client(List.duplicate({:error, :rate_limited}, 6))
+    capture_log(fn -> assert {:error, :rate_limited} = LLM.complete(request, client) end)
+    assert LLMScript.calls(agent) == 4
+
+    # A transient failure doesn't use up the rate-limit budget, or the reverse.
+    script =
+      [:rate_limited, :rate_limited, :rate_limited, :transient, :transient]
+      |> Enum.map(&{:error, &1})
+      |> Kernel.++([{:ok, %{"b" => 2}}])
+
+    {client, agent} = LLMScript.client(script)
+    capture_log(fn -> assert {:ok, %{data: %{"b" => 2}}} = LLM.complete(request, client) end)
+    assert LLMScript.calls(agent) == 6
+  end
+
+  test "rate-limit retries wait for the configured delays" do
+    Application.put_env(:ai_in_practice, :llm_rate_limit_backoff_ms, [40])
+    on_exit(fn -> Application.put_env(:ai_in_practice, :llm_rate_limit_backoff_ms, [0, 0, 0]) end)
+
+    {client, _agent} = LLMScript.client([{:error, :rate_limited}, {:ok, %{}}])
+    request = %{purpose: :turn, messages: []}
+
+    {micros, _} =
+      :timer.tc(fn -> capture_log(fn -> assert {:ok, _} = LLM.complete(request, client) end) end)
+
+    assert micros >= 40_000
   end
 
   test "response_format/1 is a strict json_schema" do

@@ -13,7 +13,9 @@ defmodule AiInPractice.LLM do
 
     * `:spend_refused`: OpenRouter refused on credit or a spending limit.
       Not retried; the UI says the service is temporarily unavailable.
-    * `:rate_limited`: too many requests. Not retried.
+    * `:rate_limited`: too many requests (HTTP 429). Retried with a
+      longer backoff, since a rate limit at the model provider usually
+      clears within seconds and failing a turn ends the conversation.
     * `:transient`: 5xx, timeouts, transport errors, unusable output.
       Retried with backoff.
     * `:fatal`: anything else (bad request, bad key). Not retried.
@@ -61,11 +63,19 @@ defmodule AiInPractice.LLM do
   @doc """
   Sends `request` with `client` (default: the configured one), retrying
   transient failures after each delay in the `:llm_backoff_ms` config
-  (default `[500, 2000]`, so three attempts at most).
+  (default `[500, 2000]`, so three attempts at most), and rate-limited ones
+  after each delay in `:llm_rate_limit_backoff_ms` (default `[2000, 5000,
+  10000]`). The two budgets are separate.
   """
   @spec complete(request(), client()) :: {:ok, response()} | {:error, error_class()}
   def complete(request, {module, opts} \\ client()) do
-    attempt(request, module, opts, backoff())
+    delays = %{
+      transient: Application.get_env(:ai_in_practice, :llm_backoff_ms, [500, 2000]),
+      rate_limited:
+        Application.get_env(:ai_in_practice, :llm_rate_limit_backoff_ms, [2000, 5000, 10_000])
+    }
+
+    attempt(request, module, opts, delays)
   end
 
   defp attempt(request, module, opts, delays) do
@@ -73,19 +83,17 @@ defmodule AiInPractice.LLM do
       {:ok, response} ->
         {:ok, response}
 
-      {:error, :transient} when delays != [] ->
-        [delay | rest] = delays
-        Logger.warning("llm #{request.purpose} transient failure, retrying in #{delay} ms")
+      {:error, class} when is_map_key(delays, class) and :erlang.map_get(class, delays) != [] ->
+        [delay | rest] = Map.fetch!(delays, class)
+        Logger.warning("llm #{request.purpose} #{class} failure, retrying in #{delay} ms")
         Process.sleep(delay)
-        attempt(request, module, opts, rest)
+        attempt(request, module, opts, %{delays | class => rest})
 
       {:error, class} ->
         Logger.warning("llm #{request.purpose} failed: #{class}")
         {:error, class}
     end
   end
-
-  defp backoff, do: Application.get_env(:ai_in_practice, :llm_backoff_ms, [500, 2000])
 
   @doc """
   The OpenAI-style `response_format` for a `{name, schema}` pair, which
