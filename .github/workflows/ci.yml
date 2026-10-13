@@ -23,7 +23,7 @@ jobs:
     name: format, compile, credo, sobelow, audits
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           version-file: .tool-versions
@@ -53,7 +53,7 @@ jobs:
     name: tests, coverage, privacy gate
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           version-file: .tool-versions
@@ -82,7 +82,7 @@ jobs:
     env:
       MIX_ENV: dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         id: beam
         with:
@@ -119,6 +119,6 @@ jobs:
     name: docker build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the release image (no push)
         run: docker build --build-arg GIT_SHA=${{ github.sha }} -t ai-in-practice:ci .
