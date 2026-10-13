@@ -1,0 +1,17 @@
+<Layouts.app flash={@flash}>
+  <%= case @reason do %>
+    <% :not_found -> %>
+      <h1>This link is not recognised</h1>
+      <p>
+        Check that you copied the whole address. If it still does not work, ask the person who sent it.
+      </p>
+    <% :revoked -> %>
+      <h1>This link has been withdrawn</h1>
+      <p>Ask the person who sent it for a new one.</p>
+    <% _used -> %>
+      <h1>This link has already been used</h1>
+      <p>
+        Each link works once. If your conversation was interrupted, ask the person who sent the link for a new one.
+      </p>
+  <% end %>
+</Layouts.app>

@@ -20,6 +20,9 @@ defmodule AiInPracticeWeb.AdminRouter do
   scope "/admin", AiInPracticeWeb.Admin do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live_session :admin do
+      live "/", LinksLive
+      live "/reading", ReadingLive
+    end
   end
 end

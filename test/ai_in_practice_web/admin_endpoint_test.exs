@@ -14,7 +14,7 @@ defmodule AiInPracticeWeb.AdminEndpointTest do
 
   test "admin routes respond on the admin endpoint", %{conn: conn} do
     html = conn |> admin_get("/admin") |> html_response(200)
-    assert html =~ "Admin"
+    assert html =~ ">Links</h1>"
     assert html =~ ~s(class="running-foot mono")
   end
 

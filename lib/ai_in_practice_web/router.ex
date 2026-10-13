@@ -28,4 +28,15 @@ defmodule AiInPracticeWeb.Router do
 
     get "/", PageController, :home
   end
+
+  # Every route here carries a link token in its path.
+  scope "/", AiInPracticeWeb do
+    pipe_through [:browser, :private]
+
+    get "/a/:token", AssessmentController, :show
+
+    live_session :recruiter do
+      live "/r/:token", RecruiterLive
+    end
+  end
 end

@@ -15,13 +15,41 @@ This repository holds the whole application and the rubric it assesses against, 
 | Claim | Where to check |
 |---|---|
 | The conversation is held only in server memory for the session, then discarded. It is never written to disk, the database or logs. | The assessment engine (in progress). CI's **privacy gate** runs every test tagged `:privacy`. |
-| The database holds link and usage data only: tokens, link type, quota, role group, status and timestamps. Nothing that identifies a candidate. | `priv/repo/migrations` |
+| The database holds link and usage data only: token hashes, link type, the recruiter firm and contact (entered by DSC), quota, role group, status and timestamps, plus the curated reading list. Nothing that identifies a candidate. | `priv/repo/migrations`, `lib/ai_in_practice/links.ex`. Test: `test/ai_in_practice/links/schema_test.exs` checks no column could hold session data |
+| Link tokens are 256 random bits, and only their SHA-256 hash is stored, so the database alone cannot open a link. A new link's address is shown once. | `lib/ai_in_practice/links/token.ex` |
+| A recruiter's labels for their candidate links (e.g. initials) stay in their own browser and are never sent to the server. | `lib/ai_in_practice_web/live/recruiter_live.ex`. Test: `test/ai_in_practice_web/live/recruiter_live_test.exs` |
 | Link tokens never reach the logs. | `lib/ai_in_practice_web/plugs/request_logger.ex` redacts them from request paths. `config/config.exs` filters them from logged params. Tests: `test/ai_in_practice_web/plugs/request_logger_test.exs` |
 | Assessment pages and report downloads are never cached or indexed, and links do not leak through the `Referer` header. | `lib/ai_in_practice_web/plugs/security_headers.ex` |
 | No third-party requests: fonts are self-hosted and there is no analytics. | `priv/static/fonts`, `test/ai_in_practice_web/design_system_test.exs` |
 | Admin is reachable only over Tailscale, on a separate listener with its own router. | `lib/ai_in_practice_web/admin/`, `lib/ai_in_practice/admin_bind.ex`, `test/ai_in_practice_web/admin_endpoint_test.exs` |
 
 Third parties in the data path: Cloudflare (which fronts the site and terminates TLS), and OpenRouter and the underlying model provider (zero data retention).
+
+## Links and access
+
+There are no accounts. A link's token is the only credential (PRD §6).
+
+- **Recruiter-mode link** (`/r/TOKEN`): DSC issues it to a firm. The recruiter mints up to their quota (default 10) of single-use candidate links, choosing a role group for each, and sees whether each is unused, started or completed.
+- **Individual-mode link** (`/a/TOKEN`): one assessment link, with a label DSC chooses. The person picks their role group.
+- A link is **used up when the first question appears**. A start that fails before then leaves it unused. A link that was started and never completed cannot be reopened, but it stops counting against the recruiter's quota.
+- The admin usage table shows a started link as **abandoned** once it is more than an hour old and still not completed (past the 40-minute hard stop).
+
+### Admin
+
+The admin pages are at `/admin` (links, quotas, revoking, usage) and `/admin/reading` (the reading list), on the Tailscale-only listener. The same link operations are available from the command line:
+
+```sh
+# development
+mix links recruiter --firm "Northgate Search" --contact "Sam Jones" --email sam@example.com [--quota 10]
+mix links individual --label IND-014
+mix links quota RECRUITER_ID 15
+mix links revoke recruiter RECRUITER_ID
+mix links revoke link LINK_ID
+mix links usage
+
+# on a release (runs inside the running node)
+bin/links usage
+```
 
 ## Versions in the footer
 

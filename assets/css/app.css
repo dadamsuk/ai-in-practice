@@ -361,6 +361,29 @@ textarea {
   cursor: pointer;
 }
 
+/* A thing to act on now, such as a new link to copy: a structure rule on
+   the left, no box. */
+.notice {
+  border-left: var(--rule);
+  padding: 0 0 0 var(--unit);
+  margin: calc(var(--unit) * 2) 0;
+  max-width: var(--measure);
+}
+
+.notice h2 {
+  margin-top: 0;
+}
+
+.notice code {
+  overflow-wrap: anywhere;
+}
+
+.admin-nav {
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  margin-top: var(--unit);
+}
+
 /* Data */
 
 .table {
@@ -394,6 +417,35 @@ textarea {
 
 .list dd {
   margin: 0;
+}
+
+/* A form that sits in a table cell, e.g. a quota. */
+.inline-form {
+  display: inline-flex;
+  gap: calc(var(--unit) / 2);
+  align-items: baseline;
+}
+
+.table .inline-form input[type="number"] {
+  display: inline-block;
+  width: 6ch;
+}
+
+/* Data tables with many columns may use the page's full width. */
+.table-wide {
+  max-width: none;
+}
+
+.table td.mono {
+  white-space: nowrap;
+}
+
+.table .label-input {
+  min-width: 10ch;
+}
+
+.link-url {
+  overflow-wrap: anywhere;
 }
 
 /* The one permitted fill, e.g. a progress track. */

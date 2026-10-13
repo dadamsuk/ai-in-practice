@@ -3,6 +3,8 @@ defmodule AiInPracticeWeb.DesignSystemTest do
   # rules of the system, checked against the stylesheet and rendered pages.
   use AiInPracticeWeb.ConnCase
 
+  alias AiInPractice.Links
+
   @css_path "assets/css/app.css"
   @css File.read!(@css_path)
   @external_resource @css_path
@@ -15,11 +17,25 @@ defmodule AiInPracticeWeb.DesignSystemTest do
   end
 
   @tag :third_party_assets
-  test "public and admin pages reference only same-origin assets", %{conn: conn} do
+  test "public, recruiter, assessment and admin pages reference only same-origin assets", %{
+    conn: conn
+  } do
+    {:ok, recruiter, r_token} =
+      Links.create_recruiter_link(%{
+        firm_name: "F",
+        contact_name: "C",
+        contact_email: "c@f.example"
+      })
+
+    {:ok, _, c_token} = Links.mint_candidate_link(recruiter, :finance)
+    admin_get = &Phoenix.ConnTest.dispatch(build_conn(), AiInPracticeWeb.AdminEndpoint, :get, &1)
+
     pages = [
       conn |> get(~p"/") |> html_response(200),
-      Phoenix.ConnTest.dispatch(build_conn(), AiInPracticeWeb.AdminEndpoint, :get, "/admin")
-      |> html_response(200)
+      build_conn() |> get(~p"/r/#{r_token}") |> html_response(200),
+      build_conn() |> get(~p"/a/#{c_token}") |> html_response(200),
+      admin_get.("/admin") |> html_response(200),
+      admin_get.("/admin/reading") |> html_response(200)
     ]
 
     for html <- pages do
