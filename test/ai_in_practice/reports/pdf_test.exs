@@ -44,8 +44,13 @@ defmodule AiInPractice.Reports.PDFTest do
     assert_in_delta w, 595.28, 0.1
     assert_in_delta h, 841.89, 0.1
 
-    for face <- ~w(SourceSerif4-Regular SourceSerif4-Semibold IBMPlexMono-Regular) do
-      assert pdf =~ ~r"/BaseFont\s*/[A-Z]{6}\+#{face}", "#{face} is not embedded"
+    # By family: a machine with its own copy of a face installed may name
+    # its weights differently.
+    fonts = for [_, name] <- Regex.scan(~r"/BaseFont\s*/[A-Z]{6}\+([^/\s>]+)", pdf), do: name
+
+    for family <- ~w(SourceSerif4 IBMPlexMono) do
+      assert Enum.any?(fonts, &String.starts_with?(&1, family)),
+             "#{family} is not embedded: #{inspect(fonts)}"
     end
 
     assert pdf =~ "/FontFile2"
