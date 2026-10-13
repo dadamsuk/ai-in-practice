@@ -113,7 +113,27 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  # The public host name, e.g. ai-in-practice.dsc.net. Cloudflare terminates
+  # TLS in front of it, so generated URLs are https on port 443. LiveView's
+  # default check_origin accepts websockets only from this url host.
+  host =
+    System.get_env("PHX_HOST") ||
+      raise """
+      environment variable PHX_HOST is missing.
+      Set it to the public host name, e.g. ai-in-practice.dsc.net.
+      """
+
+  # The model key. Without it no conversation can start, so a release
+  # without one refuses to boot rather than failing on the first visitor.
+  System.get_env("OPENROUTER_API_KEY") ||
+    raise """
+    environment variable OPENROUTER_API_KEY is missing.
+    Set it to the OpenRouter key (zero data retention, with a spend cap).
+    """
+
+  # The public listener's bind address. Behind a Cloudflare Tunnel on the
+  # same host this is 127.0.0.1, so nothing but the tunnel can reach it.
+  public_ip = parse_ip.("PUBLIC_IP", System.get_env("PUBLIC_IP") || "::")
 
   config :ai_in_practice, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
@@ -126,54 +146,15 @@ if config_env() == :prod do
       Set it to this host's Tailscale address, e.g. 100.x.y.z.
       """
 
+  admin_port = String.to_integer(System.get_env("ADMIN_PORT") || "4001")
+
   config :ai_in_practice, AiInPracticeWeb.AdminEndpoint,
-    url: [host: System.get_env("ADMIN_HOST") || admin_ip, port: 4001, scheme: "http"],
-    http: [
-      ip: parse_ip.("ADMIN_IP", admin_ip),
-      port: String.to_integer(System.get_env("ADMIN_PORT") || "4001")
-    ],
+    url: [host: System.get_env("ADMIN_HOST") || admin_ip, port: admin_port, scheme: "http"],
+    http: [ip: parse_ip.("ADMIN_IP", admin_ip), port: admin_port],
     secret_key_base: secret_key_base
 
   config :ai_in_practice, AiInPracticeWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
+    http: [ip: public_ip],
     secret_key_base: secret_key_base
-
-  # ## SSL Support
-  #
-  # To get SSL working, you will need to add the `https` key
-  # to your endpoint configuration:
-  #
-  #     config :ai_in_practice, AiInPracticeWeb.Endpoint,
-  #       https: [
-  #         ...,
-  #         port: 443,
-  #         cipher_suite: :strong,
-  #         keyfile: System.get_env("SOME_APP_SSL_KEY_PATH"),
-  #         certfile: System.get_env("SOME_APP_SSL_CERT_PATH")
-  #       ]
-  #
-  # The `cipher_suite` is set to `:strong` to support only the
-  # latest and more secure SSL ciphers. This means old browsers
-  # and clients may not be supported. You can set it to
-  # `:compatible` for wider support.
-  #
-  # `:keyfile` and `:certfile` expect an absolute path to the key
-  # and cert in disk or a relative path inside priv, for example
-  # "priv/ssl/server.key". For all supported SSL configuration
-  # options, see https://plug.hexdocs.pm/Plug.SSL.html#configure/1
-  #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :ai_in_practice, AiInPracticeWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
 end

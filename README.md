@@ -133,7 +133,16 @@ mix phx.server
 - Public site: <http://localhost:4100>
 - Admin: <http://localhost:4101/admin> (localhost only in dev. Set `ADMIN_IP` to bind it elsewhere)
 
-Production needs `DATABASE_PATH`, `SECRET_KEY_BASE`, `PHX_HOST`, `ADMIN_IP` (the host's Tailscale address) and `REPORT_SIGNING_KEY` (from `bin/signing_key new`). `OPENROUTER_API_KEY` is needed for the model. Optional: `ADMIN_PORT` (default 4001), `PORT` (default 4000), `OPENROUTER_MODEL`, `REPORT_SIGNING_RETIRED_KEYS`. The app refuses to start if `ADMIN_IP` is missing or is `0.0.0.0` or `::`, or if `REPORT_SIGNING_KEY` is missing or invalid.
+Production needs `SECRET_KEY_BASE`, `PHX_HOST` (the public host name), `OPENROUTER_API_KEY`, `ADMIN_IP` (the host's Tailscale address) and `REPORT_SIGNING_KEY` (from `bin/signing_key new`). `DATABASE_PATH` is needed outside the Docker image, which defaults it to `/data/ai_in_practice.db`. Optional: `PUBLIC_IP` (the public listener's bind address, default every interface; `127.0.0.1` behind a Cloudflare Tunnel), `PORT` (default 4000), `ADMIN_PORT` (default 4001), `OPENROUTER_MODEL`, `REPORT_SIGNING_RETIRED_KEYS`. The app refuses to start if any required one is missing, if `ADMIN_IP` is `0.0.0.0` or `::`, or if `REPORT_SIGNING_KEY` is invalid.
+
+## Running the release image
+
+```sh
+docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t ai-in-practice .
+docker run -d --init --network host -v ai-in-practice-data:/data --env-file /etc/ai-in-practice/env ai-in-practice
+```
+
+The SQLite database (links and usage only) lives on the `/data` volume, and migrations run on boot. Host networking lets the admin listener bind to the host's Tailscale address. Report PDFs are rendered by Typst inside the release, so the image needs no browser.
 
 The report PDF tests read the text back with `pdftotext` (poppler-utils), so install it to run the suite.
 

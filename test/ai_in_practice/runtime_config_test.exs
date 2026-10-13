@@ -5,8 +5,8 @@ defmodule AiInPractice.RuntimeConfigTest do
 
   alias AiInPractice.AdminBind
 
-  @vars ~w(ADMIN_IP ADMIN_PORT DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PHX_SERVER FAKE_LLM
-           REPORT_SIGNING_KEY REPORT_SIGNING_RETIRED_KEYS)
+  @vars ~w(ADMIN_IP ADMIN_PORT ADMIN_HOST DATABASE_PATH SECRET_KEY_BASE PHX_HOST PORT PUBLIC_IP
+           PHX_SERVER FAKE_LLM OPENROUTER_API_KEY REPORT_SIGNING_KEY REPORT_SIGNING_RETIRED_KEYS)
 
   setup do
     saved = Map.new(@vars, &{&1, System.get_env(&1)})
@@ -21,6 +21,8 @@ defmodule AiInPractice.RuntimeConfigTest do
     Enum.each(@vars, &System.delete_env/1)
     System.put_env("DATABASE_PATH", "/tmp/ai_in_practice_prod_test.db")
     System.put_env("SECRET_KEY_BASE", String.duplicate("a", 64))
+    System.put_env("PHX_HOST", "ai-in-practice.dsc.net")
+    System.put_env("OPENROUTER_API_KEY", "sk-or-test")
     :ok
   end
 
@@ -29,6 +31,70 @@ defmodule AiInPractice.RuntimeConfigTest do
   end
 
   defp admin_config(config), do: config[:ai_in_practice][AiInPracticeWeb.AdminEndpoint]
+  defp public_config(config), do: config[:ai_in_practice][AiInPracticeWeb.Endpoint]
+
+  describe "required production settings" do
+    setup do
+      System.put_env("ADMIN_IP", "100.88.155.65")
+      :ok
+    end
+
+    for var <- ~w(DATABASE_PATH SECRET_KEY_BASE PHX_HOST OPENROUTER_API_KEY) do
+      test "refuses to boot without #{var}" do
+        System.delete_env(unquote(var))
+        assert_raise RuntimeError, ~r/#{unquote(var)} is missing/, fn -> read_prod() end
+      end
+    end
+
+    test "with everything set, reads the database path, model key and host" do
+      config = read_prod()[:ai_in_practice]
+
+      assert config[AiInPractice.Repo][:database] == "/tmp/ai_in_practice_prod_test.db"
+      assert config[:openrouter_api_key] == "sk-or-test"
+
+      assert config[AiInPracticeWeb.Endpoint][:url] ==
+               [host: "ai-in-practice.dsc.net", port: 443, scheme: "https"]
+    end
+  end
+
+  describe "public listener" do
+    setup do
+      System.put_env("ADMIN_IP", "100.88.155.65")
+      :ok
+    end
+
+    test "accepts LiveView websockets only from the public host" do
+      # check_origin left at Phoenix's default compares the Origin with url[:host].
+      config = public_config(read_prod())
+      refute Keyword.has_key?(config, :check_origin)
+
+      refute Keyword.has_key?(
+               Application.get_env(:ai_in_practice, AiInPracticeWeb.Endpoint),
+               :check_origin
+             )
+
+      assert config[:url][:host] == "ai-in-practice.dsc.net"
+    end
+
+    test "binds to every interface on port 4000 by default" do
+      http = public_config(read_prod())[:http]
+      assert http[:ip] == {0, 0, 0, 0, 0, 0, 0, 0}
+      assert http[:port] == 4000
+    end
+
+    test "binds to PUBLIC_IP and PORT, e.g. loopback behind a Cloudflare Tunnel" do
+      System.put_env("PUBLIC_IP", "127.0.0.1")
+      System.put_env("PORT", "4080")
+      http = public_config(read_prod())[:http]
+      assert http[:ip] == {127, 0, 0, 1}
+      assert http[:port] == 4080
+    end
+
+    test "refuses a PUBLIC_IP that is not an address" do
+      System.put_env("PUBLIC_IP", "localhost")
+      assert_raise RuntimeError, ~r/PUBLIC_IP is not an IP address/, fn -> read_prod() end
+    end
+  end
 
   test "refuses to boot without ADMIN_IP" do
     assert_raise RuntimeError, ~r/ADMIN_IP is missing/, fn -> read_prod() end
@@ -46,6 +112,7 @@ defmodule AiInPractice.RuntimeConfigTest do
 
     assert http[:ip] == {100, 88, 155, 65}
     assert http[:port] == 4555
+    assert admin_config(read_prod())[:url][:port] == 4555
     assert AdminBind.validate!(:prod, admin_config(read_prod())) == :ok
   end
 

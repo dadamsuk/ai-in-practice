@@ -96,17 +96,25 @@ ENV LC_ALL=en_US.UTF-8
 WORKDIR "/app"
 RUN chown nobody /app
 
+# The SQLite database (links and usage only, PRD §10) lives on a volume, so
+# it survives a new image. Mount one at /data, writable by nobody.
+RUN mkdir /data && chown nobody /data
+VOLUME /data
+
 # set runner ENV
 ENV MIX_ENV="prod"
+ENV DATABASE_PATH="/data/ai_in_practice.db"
 
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/ai_in_practice ./
 
 USER nobody
 
-# If using an environment that doesn't automatically reap zombie processes, it is
-# advised to add an init process such as tini via `apt-get install`
-# above and adding an entrypoint. See https://github.com/krallin/tini for details
-# ENTRYPOINT ["/tini", "--"]
+# Migrations run on boot (Ecto.Migrator in AiInPractice.Application). Report
+# PDFs are rendered by Typst, a NIF inside the release, with the fonts from
+# priv/fonts, so the image needs no browser or font packages. Run with
+# --init so zombie processes are reaped, and --network host so the admin
+# listener can bind to the host's Tailscale address (see the hosting page).
+EXPOSE 4000 4001
 
 CMD ["/app/bin/server"]
