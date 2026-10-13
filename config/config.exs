@@ -13,7 +13,10 @@ config :ai_in_practice,
   env: config_env(),
   # The OpenRouter model id for this release, shown in footers and reports.
   # Overridden at runtime by OPENROUTER_MODEL.
-  model: "anthropic/claude-haiku-5.5"
+  model: "anthropic/claude-haiku-5.5",
+  # The model client (AiInPractice.LLM). Tests use the fake; development can
+  # with FAKE_LLM=1 (config/runtime.exs).
+  llm: {AiInPractice.LLM.OpenRouter, []}
 
 # Configure the endpoint
 config :ai_in_practice, AiInPracticeWeb.Endpoint,
@@ -59,7 +62,9 @@ config :esbuild,
 # Configure Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  # An allow-list: crash_reason and other metadata that could carry session
+  # data are never printed.
+  metadata: [:request_id, :assessment]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

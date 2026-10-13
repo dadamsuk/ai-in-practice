@@ -24,11 +24,7 @@ defmodule AiInPractice.Version do
     * model: the OpenRouter model id configured for this release
   """
 
-  @rubric_path Path.expand("../../priv/rubric/rubric.md", __DIR__)
-  @external_resource @rubric_path
-
   @build_sha System.get_env("GIT_SHA")
-  @rubric_version @rubric_path |> File.read!() |> AiInPractice.Version.FrontMatter.version()
 
   @doc "The code version: a short, lower-case git SHA, or `\"dev\"`."
   @spec code_version() :: String.t()
@@ -54,7 +50,7 @@ defmodule AiInPractice.Version do
 
   @doc "The rubric version from the rubric file's front matter."
   @spec rubric_version() :: String.t()
-  def rubric_version, do: @rubric_version
+  defdelegate rubric_version, to: AiInPractice.Rubric, as: :version
 
   @doc "The model id used for this release."
   @spec model() :: String.t()

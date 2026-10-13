@@ -35,3 +35,11 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# The fake model, no retry delays, and OpenRouter requests answered by
+# Req.Test stubs, never the network.
+config :ai_in_practice,
+  llm: {AiInPractice.LLM.Fake, []},
+  llm_backoff_ms: [0, 0],
+  openrouter_api_key: "test-key",
+  openrouter_req_options: [plug: {Req.Test, AiInPractice.LLM.OpenRouter}]

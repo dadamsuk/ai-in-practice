@@ -12,6 +12,9 @@ defmodule AiInPractice.Application do
       Application.get_env(:ai_in_practice, AiInPracticeWeb.AdminEndpoint)
     )
 
+    # Crash reports must never carry session data (PRD §10).
+    AiInPractice.LogRedaction.install()
+
     children = [
       AiInPracticeWeb.Telemetry,
       AiInPractice.Repo,
@@ -19,8 +22,11 @@ defmodule AiInPractice.Application do
        repos: Application.fetch_env!(:ai_in_practice, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:ai_in_practice, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: AiInPractice.PubSub},
-      # Start a worker by calling: AiInPractice.Worker.start_link(arg)
-      # {AiInPractice.Worker, arg},
+      # Live assessment sessions, held only in memory (PRD §10)
+      {Registry, keys: :unique, name: AiInPractice.Assessment.Registry},
+      {Task.Supervisor, name: AiInPractice.Assessment.TaskSupervisor},
+      {DynamicSupervisor,
+       name: AiInPractice.Assessment.SessionSupervisor, strategy: :one_for_one},
       # Start to serve requests, typically the last entry
       AiInPracticeWeb.Endpoint,
       AiInPracticeWeb.AdminEndpoint

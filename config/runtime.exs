@@ -25,6 +25,15 @@ if model = System.get_env("OPENROUTER_MODEL") do
   config :ai_in_practice, model: model
 end
 
+if api_key = System.get_env("OPENROUTER_API_KEY") do
+  config :ai_in_practice, openrouter_api_key: api_key
+end
+
+# The fake model, for walking the journey without spending. Dev only.
+if config_env() == :dev and System.get_env("FAKE_LLM") in ["1", "true"] do
+  config :ai_in_practice, llm: {AiInPractice.LLM.Fake, []}
+end
+
 parse_ip = fn name, value ->
   case :inet.parse_strict_address(String.to_charlist(value)) do
     {:ok, ip} -> ip
