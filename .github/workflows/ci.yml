@@ -26,7 +26,7 @@ jobs:
         with:
           version-file: .tool-versions
           version-type: strict
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             deps
@@ -56,7 +56,7 @@ jobs:
         with:
           version-file: .tool-versions
           version-type: strict
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             deps
@@ -83,7 +83,7 @@ jobs:
         with:
           version-file: .tool-versions
           version-type: strict
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             deps
@@ -91,7 +91,7 @@ jobs:
           key: mix-${{ runner.os }}-dev-${{ hashFiles('.tool-versions', 'mix.lock') }}
           restore-keys: mix-${{ runner.os }}-dev-
       - name: Restore PLTs
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         id: plt-cache
         with:
           path: priv/plts
@@ -103,7 +103,7 @@ jobs:
         run: mkdir -p priv/plts && mix dialyzer --plt
       - name: Save PLTs
         if: steps.plt-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: priv/plts
           key: ${{ steps.plt-cache.outputs.cache-primary-key }}
