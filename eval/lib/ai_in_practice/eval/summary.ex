@@ -64,11 +64,22 @@ defmodule AiInPractice.Eval.Summary do
   defp rejections(map), do: Enum.map_join(map, ", ", fn {k, n} -> "#{k} (#{n})" end)
 
   defp voice(nil), do: "n/a"
-  defp voice(%{second_person: 0, reports: r}), do: "no report of #{r} said \"you\" in shared text"
 
-  defp voice(v),
-    do:
-      "#{v.second_person} of #{v.reports} reports said \"you\" in shared text (#{Enum.join(v.fields, ", ")})"
+  defp voice(%{second_person: 0, reports: r} = v)
+       when not is_map_key(v, :third_person) or v.third_person == 0,
+       do: "no report of #{r} broke its perspective"
+
+  defp voice(v) do
+    [
+      v.second_person > 0 &&
+        "#{v.second_person} of #{v.reports} reports said \"you\" in the assessor's text",
+      Map.get(v, :third_person, 0) > 0 &&
+        "#{v.third_person} of #{v.reports} reports said \"they\" in the person's own text"
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join("; ")
+    |> Kernel.<>(" (#{Enum.join(v.fields, ", ")})")
+  end
 
   defp questions(%{runs: 0}), do: "n/a"
 

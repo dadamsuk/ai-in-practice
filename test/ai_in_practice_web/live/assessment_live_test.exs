@@ -98,17 +98,22 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
   end
 
   describe "start screen" do
-    test "is short: three essentials up front, the rest under More details", %{
+    test "is short: three essentials up front, the rest under one More details", %{
       conn: conn,
       recruiter: recruiter
     } do
       {_link, token} = candidate(recruiter)
-      {:ok, view, _html} = live(conn, ~p"/a/#{token}")
+      {:ok, view, html} = live(conn, ~p"/a/#{token}")
 
       assert has_element?(view, "#essentials > li", "Be specific.")
-      assert has_element?(view, "#be-specific", "what you did, which tools, and what happened")
+      assert has_element?(view, "#be-specific", "what you did, which tools, what happened")
       assert has_element?(view, "#essentials > li", "You have one attempt.")
-      assert has_element?(view, "#essentials > li", "Nothing you write is kept")
+
+      assert has_element?(
+               view,
+               "#essentials > li#nothing-stored",
+               "Nothing you write is stored on our servers."
+             )
 
       assert view
              |> element("#essentials")
@@ -116,13 +121,14 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
              |> then(&Regex.scan(~r/<li/, &1))
              |> length() == 3
 
-      # The fuller text is all still there, folded away and closed.
+      # The rest is folded away and closed, in one place.
       assert has_element?(view, "details#more-about:not([open]) > summary", "More details")
-      assert has_element?(view, "details#more-about #before-you-begin", "20 to 25 minutes")
+      assert has_element?(view, "details#more-about #before-you-begin", "40 minutes at most")
       assert has_element?(view, "details#more-about", "no scores")
       assert has_element?(view, "details#more-about", "less accurate")
-      assert has_element?(view, "details#more-handling:not([open]) > summary", "More details")
-      assert has_element?(view, "details#more-handling #data-handling", "zero data retention")
+      assert has_element?(view, "details#more-about #data-handling", "zero data retention")
+      refute has_element?(view, "#more-handling")
+      assert html |> then(&Regex.scan(~r/<details/, &1)) |> length() == 1
 
       # The legal links stay in view, outside the folds.
       refute has_element?(view, "details #legal")
@@ -153,9 +159,9 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
       {:ok, view, html} = live(conn, ~p"/a/#{token}")
 
       assert view |> element("#sender") |> render() =~ "Northgate Search"
-      assert view |> element("#sender") |> render() =~ "whether you have started and completed"
+      assert view |> element("#sender") |> render() =~ "whether you have started and finished"
       assert view |> element("#role-group") |> render() =~ "People"
-      assert html =~ "makes no decision about you"
+      assert html =~ "not a decision about you"
       assert html =~ "20 to 25 minutes"
       assert html =~ "one attempt"
       assert html =~ "figures as ranges"
@@ -345,23 +351,53 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
       assert session_id(view) =~ ~r/\A[A-Za-z0-9_-]{24}\z/
     end
 
-    test "the progress rule fills as areas are covered", %{conn: conn, recruiter: recruiter} do
+    test "the progress rule moves on with every main question answered", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
       {_link, token} = candidate(recruiter)
 
+      # No area is ever called covered: the rule moves anyway (#800).
       use_script([
         LLMScript.turn("Q1"),
-        LLMScript.turn("Q2", [:personal_use, :understanding])
+        LLMScript.turn("Q2"),
+        LLMScript.turn("Why?", [], kind: "follow_up"),
+        LLMScript.turn("Q3")
       ])
 
       view = begin(conn, token)
       await(view, "#question")
-      assert has_element?(view, "#progress[aria-valuenow='0']")
+      assert has_element?(view, "#progress[aria-valuemax='14'][aria-valuenow='0']")
+      assert view |> render() |> then(&Regex.scan(~r/progress-step/, &1)) |> length() == 14
       refute has_element?(view, ".progress-done")
 
       answer(view, "One.")
       await(view, "#question[data-number='2']")
+      assert has_element?(view, "#progress[aria-valuenow='1']")
+
+      # A follow-up is not a new main question.
+      answer(view, "Two.")
+      await(view, "#question[data-number='3']")
+      assert has_element?(view, "#progress[aria-valuenow='2']")
+      answer(view, "Three.")
+      await(view, "#question[data-number='4']")
       assert has_element?(view, "#progress[aria-valuenow='2']")
       assert view |> render() |> then(&Regex.scan(~r/progress-done/, &1)) |> length() == 2
+    end
+
+    test "the progress rule jumps ahead when areas are covered faster", %{
+      conn: conn,
+      recruiter: recruiter
+    } do
+      {_link, token} = candidate(recruiter)
+      use_script([LLMScript.turn("Q1"), LLMScript.turn("Q2", [:personal_use, :understanding])])
+
+      view = begin(conn, token)
+      await(view, "#question")
+      answer(view, "One.")
+      await(view, "#question[data-number='2']")
+      # Two of five areas is 5 of 14 segments; one question answered is 1.
+      assert has_element?(view, "#progress[aria-valuenow='5']")
     end
 
     test "finish early writes the reports from what was said", %{
@@ -442,7 +478,7 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
       refute has_element?(view, "#send[disabled]")
     end
 
-    test "a sent answer greys the question until the next one arrives", %{
+    test "a sent answer hides the question, in place, until the next one arrives", %{
       conn: conn,
       recruiter: recruiter
     } do
@@ -455,6 +491,8 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
 
       answer(view, "One.")
       assert_receive {:requested, task}, 1000
+      # Hidden by .question-answered (visibility: hidden, so it keeps its
+      # space: design_system_test checks the rule).
       assert has_element?(view, "#question.question-answered", "Q1")
       assert has_element?(view, "#status", "The next question is being written.")
 
@@ -654,7 +692,7 @@ defmodule AiInPracticeWeb.AssessmentLiveTest do
       {:ok, view, html} = live(conn, ~p"/a/#{token}")
 
       assert view |> element("#quick") |> render() =~ "three or four questions"
-      assert html =~ "stops after eight at most"
+      assert html =~ "stops after eight minutes at most"
       refute html =~ "20 to 25 minutes"
       refute html =~ ~r/interview|verified|score:/i
     end

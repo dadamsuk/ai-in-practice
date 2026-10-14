@@ -19,9 +19,10 @@ defmodule AiInPractice.Assessment.Session do
 
   The owner receives `{AiInPractice.Assessment, session_id, event}`:
 
-    * `{:question, %{text: _, number: _, kind: _, first?: _, covered: _}}`:
+    * `{:question, %{text: _, number: _, kind: _, first?: _, covered: _, done: _, steps: _}}`:
       a question to show. The first (`first?: true`) is the moment the link
-      is used up (PRD §6).
+      is used up (PRD §6). `done` of `steps` is how far through the
+      conversation it is, for the progress rule (see `progress_done/3`).
     * `{:closed, reason}`: the conversation is over and the report is being
       written. `reason` is `:covered`, `:finished_early`, `:max_questions`,
       `:max_turns`, `:max_tokens` or `:time_limit`.
@@ -182,6 +183,14 @@ defmodule AiInPractice.Assessment.Session do
   def download(id), do: call(id, :download)
 
   @doc """
+  Merges `changes` into the session's `:meta` (for example, `mode: :voice`
+  once a recording has been used). The same rule applies as for `:meta`
+  at the start: never anything the person said.
+  """
+  @spec put_meta(String.t(), map()) :: :ok | {:error, :not_found}
+  def put_meta(id, changes) when is_map(changes), do: call(id, {:put_meta, changes})
+
+  @doc """
   Makes `owner` the session's owner, so a LiveView that reconnected can
   carry on. `check` is given the session's `:meta` and must return true
   (for example, that it belongs to the same link); otherwise, or if the
@@ -316,6 +325,9 @@ defmodule AiInPractice.Assessment.Session do
     do: {:reply, {:ok, report, state.meta}, state}
 
   def handle_call(:download, _from, state), do: {:reply, {:error, :not_ready}, state}
+
+  def handle_call({:put_meta, changes}, _from, state),
+    do: {:reply, :ok, %{state | meta: Map.merge(state.meta, changes)}}
 
   def handle_call({:attach, check, owner}, _from, state) do
     if check.(state.meta) do
@@ -496,7 +508,9 @@ defmodule AiInPractice.Assessment.Session do
       number: Transcript.size(transcript),
       kind: kind,
       first?: Transcript.size(transcript) == 1,
-      covered: MapSet.size(state.covered)
+      covered: MapSet.size(state.covered),
+      done: progress_done(state.main_questions, MapSet.size(state.covered), state.limits),
+      steps: progress_steps(state.limits)
     }
 
     notify(state, {:question, shown})
@@ -509,6 +523,27 @@ defmodule AiInPractice.Assessment.Session do
         last_kind: kind,
         status: :awaiting_answer
     }
+  end
+
+  @doc """
+  The number of segments in the progress rule: one for each main question
+  at the top of the aim (14 in a full session, 4 in a quick one).
+  """
+  @spec progress_steps(map()) :: pos_integer()
+  def progress_steps(%{aim_main_questions: {_low, high}}), do: high
+
+  @doc """
+  How many segments of the progress rule are filled when a question is
+  shown: one for each main question already answered, or the share of the
+  areas covered if that is further on. The model is sparing about calling
+  an area covered, so coverage alone barely moves the rule (#800). The
+  last segment fills only when the conversation closes.
+  """
+  @spec progress_done(non_neg_integer(), non_neg_integer(), map()) :: non_neg_integer()
+  def progress_done(main_answered, covered, limits) do
+    steps = progress_steps(limits)
+    by_areas = div(covered * steps, length(Rubric.areas()))
+    max(main_answered, by_areas) |> min(steps - 1)
   end
 
   ## Closing and the report

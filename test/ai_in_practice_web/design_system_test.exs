@@ -82,17 +82,18 @@ defmodule AiInPracticeWeb.DesignSystemTest do
 
   test "the colour tokens match the PRD" do
     for {token, value} <- [
-          ground: "#ffffff",
+          ground: "#f8f4ea",
           ink: "#111111",
           "ink-quiet": "#555555",
           hair: "#8c8c8c",
-          band: "#e2e2e2",
+          band: "#e4dfd2",
           accent: "#8a2a1e"
         ] do
       assert @css =~ "--#{token}: #{value};"
     end
 
-    assert @css =~ ~r/@media print\s*\{\s*:root\s*\{\s*--hair: #c4c4c4;/
+    # Cream on screen, white on paper.
+    assert @css =~ ~r/@media print\s*\{\s*:root\s*\{\s*--ground: #ffffff;\s*--hair: #c4c4c4;/
   end
 
   test "no rounded corners, shadows, gradients or transitions" do
@@ -144,8 +145,36 @@ defmodule AiInPracticeWeb.DesignSystemTest do
     assert @css =~ ~r/\.select select \{[^}]*padding-right:/
   end
 
-  test "a sent question is drawn in the quiet ink" do
-    assert @css =~ ~r/\.question-answered \{\s*color: var\(--ink-quiet\);/
+  test "buttons are dark brown with light text; a disabled one is drawn quiet" do
+    assert @css =~ "--button: #3d2b1f;"
+
+    assert @css =~
+             ~r/\.button \{[^}]*color: var\(--ground\);[^}]*background: var\(--button\);[^}]*border: 2px solid var\(--button\);/
+
+    assert @css =~
+             ~r/::file-selector-button \{[^}]*color: var\(--ground\);[^}]*background: var\(--button\);/
+
+    assert @css =~
+             ~r/\.button:disabled \{[^}]*color: var\(--ink-quiet\);[^}]*background: var\(--ground\);/
+  end
+
+  test "a report on screen reads as parts: ruled sections, areas, labels beside their text (#804)" do
+    assert @css =~ ~r/\.report-section \{[^}]*border-top: var\(--hairline\);/
+    assert @css =~ ~r/\.report-section \{[^}]*font-size: 24px;/
+    assert @css =~ ~r/\.report-area \{[^}]*font-size: 20px;/
+    assert @css =~ ~r/\.labelled \{[^}]*display: grid;[^}]*grid-template-columns: 12rem 1fr;/
+    # Stacked on a narrow screen, so nothing scrolls sideways.
+    assert @css =~
+             ~r/@media \(max-width: 40rem\) \{\s*\.labelled \{\s*grid-template-columns: 1fr;/
+
+    assert @css =~ ~r/\.report \.statement \{[^}]*border-left: var\(--rule\);/
+    # Rules, not boxes: nothing in the report draws a full border.
+    refute @css =~ ~r/\.report[^{]*\{[^}]*\bborder: /
+  end
+
+  test "a sent question goes from the screen but keeps its space" do
+    assert @css =~ ~r/\.question-answered \{\s*visibility: hidden;\s*\}/
+    refute @css =~ ~r/\.question-answered \{[^}]*display: none/
   end
 
   test "rules: 3px ink for structure, 2px hairline for separators" do

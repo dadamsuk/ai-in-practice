@@ -54,9 +54,10 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
     view
   end
 
+  # Voice offered (the check has answered), then the one Begin button.
   defp begin_voice(conn, token) do
-    view = conn |> open(token) |> await("#begin-voice")
-    view |> form("#begin-form") |> put_submitter("#begin-voice") |> render_submit()
+    view = conn |> open(token) |> await("#voice-offered")
+    view |> form("#begin-form") |> render_submit()
     await(view, "#record")
   end
 
@@ -77,21 +78,22 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
   defp link_mode(link), do: Repo.get!(AssessmentLink, link.id).mode
 
   describe "the start screen" do
-    test "offers voice once the transcriber answers, and says how recordings are handled", %{
+    test "has one Begin button, and says how recordings are handled once voice is offered", %{
       conn: conn,
       token: token
     } do
-      view = conn |> open(token) |> await("#begin-voice")
+      view = conn |> open(token) |> await("#voice-offered")
 
-      assert has_element?(view, "#begin.button-primary", "Begin, typing my answers")
-      assert has_element?(view, "#begin-voice", "Begin, speaking my answers")
-      assert has_element?(view, "#voice-offered", "speak them and correct the text")
+      # No choice between typing and speaking: one button, then type or
+      # press Record on each question.
+      assert has_element?(view, "#begin.button-primary", "Begin the conversation")
+      refute has_element?(view, "#begin-voice")
+      refute has_element?(view, "#begin-form [name='mode']")
+      assert has_element?(view, "#voice-offered", "or press Record and speak them")
 
       handling = view |> element("#voice-handling") |> render()
-      assert handling =~ "deleted at once"
-      assert handling =~ "never stored"
-      assert handling =~ "correct it before you send it"
-      assert handling =~ "only ever shown on screen"
+      assert handling =~ "deleted once turned into text"
+      assert handling =~ "correct the text before you send it"
       assert handling =~ "transcription slips never count against you"
     end
 
@@ -100,12 +102,11 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
       view = open(conn, token)
       # Give the check its chance to answer.
       Process.sleep(50)
-      html = render(view)
 
-      refute has_element?(view, "#begin-voice")
+      refute has_element?(view, "#voice-offered")
       refute has_element?(view, "#voice-handling")
       assert has_element?(view, "#begin", "Begin the conversation")
-      assert html =~ "Type your answers."
+      assert has_element?(view, "#before-you-begin", "use your computer's dictation")
     end
 
     test "when the transcriber does not answer, voice is not offered", %{
@@ -115,7 +116,10 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
       use_transcriber(ready: false)
       view = open(conn, token)
       Process.sleep(50)
-      refute has_element?(view, "#begin-voice")
+      refute has_element?(view, "#voice-offered")
+      view |> form("#begin-form") |> render_submit()
+      await(view, "#question")
+      refute has_element?(view, "#voice")
     end
 
     test "a forged voice choice on a page that did not offer it begins with typing", %{
@@ -132,18 +136,25 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
       assert link_mode(link) == :text
     end
 
-    test "typing is the default choice when voice is offered", %{
-      conn: conn,
-      link: link,
-      token: token
-    } do
-      view = conn |> open(token) |> await("#begin-voice")
-      view |> form("#begin-form") |> put_submitter("#begin") |> render_submit()
-      await(view, "#question")
+    test "with voice offered, every question has Record beside the box, and the answers count as typed until it is used",
+         %{conn: conn, link: link, token: token} do
+      {client, _} =
+        LLMScript.client([LLMScript.turn("Q1"), LLMScript.turn("", [], close: true)])
 
-      refute has_element?(view, "#voice")
-      assert has_element?(view, "#answer-help", "Type, or use your computer")
+      Application.put_env(:ai_in_practice, :llm, client)
+      view = begin_voice(conn, token)
+
+      assert has_element?(view, "#answer-help", "Type, or press Record to speak.")
       assert link_mode(link) == :text
+
+      view |> form("#answer-form", %{answer: "I typed this one."}) |> render_submit()
+      await(view, "#candidate-report")
+
+      assert link_mode(link) == :text
+
+      for report <- ~w(#candidate-report #assessor-report) do
+        assert has_element?(view, "#{report} dd", "typed")
+      end
     end
   end
 
@@ -154,8 +165,7 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
       token: token
     } do
       view = begin_voice(conn, token)
-      assert link_mode(link) == :voice
-      assert has_element?(view, "#answer-help", "correct anything misheard")
+      assert has_element?(view, "#answer-help", "Check the text before you send it.")
       # The question is only ever on screen: no audio anywhere on the page.
       refute render(view) =~ "<audio"
 
@@ -180,6 +190,8 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
       upload(view)
       assert_push_event(view, "transcribed", %{text: text})
       assert text == Fake.text()
+      # A recording used: the link's usage record says spoken.
+      assert link_mode(link) == :voice
 
       await(view, "#record")
       # The text is in the box (the browser's hook enables send as it
@@ -378,11 +390,11 @@ defmodule AiInPracticeWeb.AssessmentVoiceTest do
     end
 
     test "recording events outside a question change nothing", %{conn: conn, token: token} do
-      view = conn |> open(token) |> await("#begin-voice")
+      view = conn |> open(token) |> await("#voice-offered")
       render_hook(view, "recording", %{})
       render_hook(view, "recorded", %{})
       render_change(view, "voice_upload", %{})
-      assert has_element?(view, "#begin-voice")
+      assert has_element?(view, "#begin-form")
       refute has_element?(view, "#recording")
     end
   end

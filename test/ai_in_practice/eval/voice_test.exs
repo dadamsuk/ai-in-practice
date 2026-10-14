@@ -70,10 +70,39 @@ defmodule AiInPractice.Eval.VoiceTest do
     assert Voice.aggregate(reports) == %{
              reports: 3,
              second_person: 2,
+             third_person: 0,
              fields: ["overall", "understanding description"]
            }
 
-    assert Voice.aggregate([]) == %{reports: 0, second_person: 0, fields: []}
+    assert Voice.aggregate([]) == %{reports: 0, second_person: 0, third_person: 0, fields: []}
+  end
+
+  test ~s(the person's own text that talks about them as "they" is caught, by field) do
+    good = %{
+      your_summary: "You use AI for drafting.",
+      your_overall:
+        "Your profile is uneven. Your team follows your lead, and they ask you first.",
+      areas: [%{area: :attitude, your_description: "You are open to it."}]
+    }
+
+    assert Voice.third_person(good) == []
+
+    bad = %{
+      good
+      | your_summary: "They use AI for drafting.",
+        areas: [%{area: :attitude, your_description: "This person is open to it."}]
+    }
+
+    assert Voice.third_person(bad) == ["your_summary", "attitude your_description"]
+    assert Voice.third_person(%{"your_overall" => "Their profile is uneven."}) == ["your_overall"]
+    assert Voice.third_person(%{your_overall: ~s(You said "They never check it.")}) == []
+
+    assert %{
+             second_person: 0,
+             third_person: 1,
+             fields: ["attitude your_description", "your_summary"]
+           } =
+             Voice.aggregate([bad, good])
   end
 
   test "the summary says how many reports slipped, and where" do
@@ -86,11 +115,25 @@ defmodule AiInPractice.Eval.VoiceTest do
       questions: %{runs: 0},
       rejections: %{},
       calls: %{},
-      voice: %{reports: 3, second_person: 2, fields: ["overall"]}
+      voice: %{reports: 3, second_person: 2, third_person: 0, fields: ["overall"]}
     }
 
     assert Summary.markdown(summary, %{}) =~
-             ~s{Voice: 2 of 3 reports said "you" in shared text (overall)}
+             ~s{Voice: 2 of 3 reports said "you" in the assessor's text (overall)}
+
+    both =
+      put_in(summary.voice, %{
+        reports: 3,
+        second_person: 1,
+        third_person: 1,
+        fields: ["overall", "your_summary"]
+      })
+
+    assert Summary.markdown(both, %{}) =~
+             ~s{Voice: 1 of 3 reports said "you" in the assessor's text; 1 of 3 reports said "they" in the person's own text (overall, your_summary)}
+
+    clean = put_in(summary.voice, %{reports: 3, second_person: 0, third_person: 0, fields: []})
+    assert Summary.markdown(clean, %{}) =~ "Voice: no report of 3 broke its perspective"
 
     assert Summary.markdown(Map.delete(summary, :voice), %{}) =~ "Voice: n/a"
   end

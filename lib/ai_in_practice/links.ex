@@ -302,6 +302,28 @@ defmodule AiInPractice.Links do
     end
   end
 
+  @doc """
+  Records that a recording was used for an answer: the link's mode turns
+  to `:voice`. Only a link that has been used up; an unused one is left
+  alone and gets `{:error, :not_started}`.
+  """
+  @spec mark_spoken(AssessmentLink.t()) :: {:ok, AssessmentLink.t()} | {:error, :not_started}
+  def mark_spoken(%AssessmentLink{} = link) do
+    at = now()
+
+    {count, _} =
+      Repo.update_all(
+        from(l in AssessmentLink,
+          where: l.id == ^link.id and l.status in [:started, :completed]
+        ),
+        set: [mode: :voice, updated_at: at]
+      )
+
+    if count == 1,
+      do: {:ok, %{link | mode: :voice, updated_at: at}},
+      else: {:error, :not_started}
+  end
+
   @doc "Marks a started link completed, once the reports have been generated."
   @spec mark_completed(AssessmentLink.t()) ::
           {:ok, AssessmentLink.t()} | {:error, :not_started}

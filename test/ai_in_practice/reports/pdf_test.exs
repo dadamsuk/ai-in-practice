@@ -3,6 +3,7 @@ defmodule AiInPractice.Reports.PDFTest do
 
   import AiInPractice.ReportFixtures
 
+  alias AiInPractice.LLM.Fake
   alias AiInPractice.Reports.{Content, Payload, PDF, Signing}
 
   @moduletag :tmp_dir
@@ -147,11 +148,18 @@ defmodule AiInPractice.Reports.PDFTest do
     end
   end
 
+  # The fake's person's report with `changes` (atom keys) put in.
+  defp your_report(changes) do
+    Fake.report(["One."])
+    |> Map.fetch!("your_report")
+    |> Map.merge(Map.new(changes, fn {k, v} -> {Atom.to_string(k), v} end))
+  end
+
   test "report text is printed as written, never read as Typst markup", %{tmp_dir: dir} do
     tricky =
       ~S|#set page(fill: red) = Heading *bold* _it_ $x^2$ <label> @ref `code` \ #import "x"|
 
-    report = report_fixture(["One."], %{"summary" => tricky})
+    report = report_fixture(["One."], %{"your_report" => your_report(summary: tricky)})
 
     text = flat(text(PDF.render(:candidate, report, meta_fixture()), dir))
 
@@ -160,7 +168,10 @@ defmodule AiInPractice.Reports.PDFTest do
   end
 
   test "typographic and non-Latin characters survive", %{tmp_dir: dir} do
-    report = report_fixture(["One."], %{"summary" => "Costs – “quickly” — it’s fine… Zoë, Łódź."})
+    report =
+      report_fixture(["One."], %{
+        "your_report" => your_report(summary: "Costs – “quickly” — it’s fine… Zoë, Łódź.")
+      })
 
     assert text(PDF.render(:candidate, report, meta_fixture()), dir) =~
              "Costs – “quickly” — it’s fine… Zoë, Łódź."

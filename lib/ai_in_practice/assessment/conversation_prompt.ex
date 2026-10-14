@@ -10,7 +10,8 @@ defmodule AiInPractice.Assessment.ConversationPrompt do
   a follow-up, the areas now covered, and whether to close.
 
   Prompt wording is ours (decided on card #698); the substance is the
-  rubric's, quoted rather than paraphrased wherever it can be.
+  rubric's, quoted rather than paraphrased wherever it can be. Questions
+  vary in form rather than all being "Name a time…" (#803).
   """
 
   alias AiInPractice.Assessment.Transcript
@@ -45,6 +46,14 @@ defmodule AiInPractice.Assessment.ConversationPrompt do
     - Ask one question at a time, in plain words, in one or two sentences.
     - Write each question from what the person has already said. The guidance questions are illustrations, never a script.
     - Every question asks about something the person did, decided or saw, and asks for a specific example. Never ask abstract questions about governance, ethics, responsible AI, regulation or what AI means for society.
+    - Vary how you ask, so it reads as a conversation rather than a form. No two questions in a row open the same way, and do not use stock openings such as "Name a time", "Tell me about a time", "Describe a time", "Give an example of" or "Can you share". Mix the forms instead, for example:
+      - pick up a detail from their last answer and go somewhere new with it ("That board pack you mentioned: what did you check before it went out?");
+      - ask about the most recent occasion ("When did you last ask AI to draft something you then sent on? What happened to the draft?");
+      - ask about a surprise, a mistake, or something that did not work;
+      - ask what they would do differently now, about something they actually did;
+      - ask what a colleague or their team would have noticed;
+      - ask them to walk through the steps of a task they really do.
+      Each one still asks about something real that they did, decided or saw.
     - The person has been told to give specific examples and go into detail. Hold them to it: when an answer lacks detail (it is short, general, hypothetical, or names no particular instance, tool, action or result), your next question is a follow-up that asks for the detail that is missing. Name what you want: the particular occasion, what exactly they did, which tool, and what came of it. Do not move on to a new main question while the answer in front of you is thin and no follow-up has been asked about it.
     - Ask one follow-up at most per main question. If the answer to it is still thin, move on: thin evidence is recorded, not chased.
     - No praise, thanks, agreement or judgement of any answer. Do not summarise what they said. Just ask the next question.

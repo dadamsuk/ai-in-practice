@@ -93,14 +93,14 @@ defmodule AiInPractice.Reports.Content do
   def candidate(%Report{} = report) do
     List.flatten([
       {:h2, "Summary"},
-      {:p, report.summary},
-      {:p, report.overall},
+      {:p, report.your_summary},
+      {:p, report.your_overall},
       {:h2, "The five areas"},
       for area <- report.areas do
         [
           {:h3, Rubric.area_name(area.area)},
-          {:p, area.description},
-          {:labelled, "how sure this is", area.confidence_in_words}
+          {:p, area.your_description},
+          {:labelled, "how sure this is", area.your_confidence_in_words}
         ]
       end,
       {:h2, "What you are doing well"},

@@ -55,6 +55,29 @@ defmodule AiInPractice.Reports.ContentTest do
     refute "Further reading" in texts
   end
 
+  test "each report keeps to one perspective: you in the person's, they in the assessor's (#802)" do
+    report = report_fixture()
+    candidate = Content.texts(Content.candidate(report))
+    assessor = Content.texts(Content.assessor(report))
+
+    assert report.your_summary in candidate
+    assert report.your_overall in candidate
+    refute report.summary in candidate
+    refute report.overall in candidate
+
+    assert report.summary in assessor
+    assert report.overall in assessor
+    refute report.your_summary in assessor
+    refute report.your_overall in assessor
+
+    for area <- report.areas do
+      assert area.your_description in candidate
+      refute area.description in candidate
+      assert area.description in assessor
+      refute area.your_description in assessor
+    end
+  end
+
   test "never shows an area's internal level or confidence" do
     report = report_fixture()
     assert Enum.all?(report.areas, &(&1.level == :developing and &1.confidence == :medium))

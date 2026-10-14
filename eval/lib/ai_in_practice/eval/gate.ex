@@ -20,8 +20,10 @@ defmodule AiInPractice.Eval.Gate do
     * any question named a level or a score (`max_level_leaks`), or two
       follow-ups came back to back
     * more than `max_second_person` reports spoke to the person as "you"
-      in text both reports share (`AiInPractice.Eval.Voice`); summaries
-      from before this check have no `voice` and pass it
+      in the assessor report's summary, overall or descriptions, or more
+      than `max_third_person` talked about them as "they" in their own
+      (`AiInPractice.Eval.Voice`); summaries from before each check lack
+      its count and pass it
     * a gate persona is missing from the summary
 
   Summaries and baselines are read as decoded JSON (string keys), as
@@ -34,7 +36,8 @@ defmodule AiInPractice.Eval.Gate do
     "max_mean_drift" => 0.5,
     "max_level_leaks" => 0,
     "max_insufficient" => 2,
-    "max_second_person" => 0
+    "max_second_person" => 0,
+    "max_third_person" => 0
   }
 
   @ranks %{"early" => 0, "developing" => 1, "capable" => 2, "advanced" => 3}
@@ -166,12 +169,24 @@ defmodule AiInPractice.Eval.Gate do
   end
 
   defp voice(%{"voice" => %{"second_person" => n} = v}, t) do
-    if n > t["max_second_person"],
-      do: [
-        "#{n} of #{v["reports"]} reports spoke to the person as \"you\" in shared text " <>
-          "(#{Enum.join(v["fields"] || [], ", ")})"
-      ],
-      else: []
+    fields = "(#{Enum.join(v["fields"] || [], ", ")})"
+    third = v["third_person"] || 0
+
+    second_failure =
+      if n > t["max_second_person"],
+        do: [
+          "#{n} of #{v["reports"]} reports spoke to the person as \"you\" in the assessor's text #{fields}"
+        ],
+        else: []
+
+    third_failure =
+      if third > (t["max_third_person"] || 0),
+        do: [
+          "#{third} of #{v["reports"]} reports talked about the person as \"they\" in their own text #{fields}"
+        ],
+        else: []
+
+    second_failure ++ third_failure
   end
 
   defp voice(_summary, _t), do: []

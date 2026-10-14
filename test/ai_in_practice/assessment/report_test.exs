@@ -28,6 +28,16 @@ defmodule AiInPractice.Assessment.ReportTest do
     update_in(data["areas"], &Enum.map(&1, fn a -> put_if(a, a["area"] == id, key, value) end))
   end
 
+  # The person's report is one object in the payload (#802).
+  defp yours(data, fun), do: Map.update!(data, "your_report", fun)
+  defp put_yours(data, path, value), do: put_in(data, ["your_report" | List.wrap(path)], value)
+
+  defp put_your_area(data, area, key, value),
+    do: put_yours(data, ["areas", Atom.to_string(area), key], value)
+
+  # "your_report.main_gap" as a path into the payload.
+  defp put_path(data, path, value), do: put_in(data, String.split(path, "."), value)
+
   defp put_if(map, true, key, value), do: Map.put(map, key, value)
   defp put_if(map, false, _key, _value), do: map
 
@@ -145,15 +155,15 @@ defmodule AiInPractice.Assessment.ReportTest do
           {"summary", "They are Advanced in personal use."},
           {"overall", "Overall this is a 7/10 profile."},
           {"overall", "Their personal use scores 3 out of 5."},
-          {"main_gap", "You were rated as capable in leading adoption."},
-          {"main_gap", "Leading adoption sits at an early level."},
+          {"your_report.main_gap", "You were rated as capable in leading adoption."},
+          {"your_report.main_gap", "Leading adoption sits at an early level."},
           {"summary", "Advanced: they shape how others work."},
           {"summary", "Their use was \"developing\" at best."},
           {"overall", "There was Insufficient evidence on attitude."},
           {"overall", "A score of 8 for understanding."}
         ] do
       test "#{inspect(text)} in #{field} rejects the report" do
-        data = data(&Map.put(&1, unquote(field), unquote(text)))
+        data = data(&put_path(&1, unquote(field), unquote(text)))
         assert {:error, {:invalid, [{:level_or_score, unquote(field)}]}} = validate(data)
       end
     end
@@ -195,17 +205,139 @@ defmodule AiInPractice.Assessment.ReportTest do
     end
   end
 
+  describe "perspective (#802)" do
+    test "the person's report has its own you-versions of the shared text" do
+      assert {:ok, report} = validate(data())
+      assert report.your_summary =~ "You described"
+      assert report.your_overall =~ "Your profile"
+      assert Enum.all?(report.areas, &(&1.your_description =~ "You gave"))
+      assert Enum.all?(report.areas, &(&1.description =~ "They gave"))
+    end
+
+    for {field, text} <- [
+          {"summary", "Your use of AI is broad."},
+          {"overall", "They use it daily. You lead on checking."},
+          {"your_report.summary", "They described their own use of AI."},
+          {"your_report.overall", "This person gave few examples."},
+          {"your_report.main_gap", "The candidate said little about the team."}
+        ] do
+      test "#{inspect(text)} in #{field} rejects the report" do
+        assert {:error, {:invalid, [{:perspective, unquote(field)}]}} =
+                 validate(data(&put_path(&1, unquote(field), unquote(text))))
+      end
+    end
+
+    test "a slip in an area, a strength, a next step or the assessor's text is caught with its path" do
+      for {change, path} <- [
+            {&put_area(&1, :attitude, "description", "You are open to it."),
+             "areas.attitude.description"},
+            {&put_your_area(&1, :attitude, "description", "They are open to it."),
+             "your_report.areas.attitude.description"},
+            {&put_your_area(
+               &1,
+               :attitude,
+               "confidence_in_words",
+               "Their one example was detailed."
+             ), "your_report.areas.attitude.confidence_in_words"},
+            {&put_area(&1, :attitude, "confidence_in_words", "Based on what you said."),
+             "areas.attitude.confidence_in_words"},
+            {&put_area(&1, :attitude, "shortfall", "Your example had no outcome."),
+             "areas.attitude.shortfall"},
+            {&put_yours(&1, "strengths", [%{"point" => "This person checks.", "evidence" => "x"}]),
+             "your_report.strengths.0"},
+            {&put_yours(&1, ["next_steps", "later"], ["Fine.", "They should measure it."]),
+             "your_report.next_steps.later.1"},
+            {&Map.put(&1, "assessor_next_steps", ["Ask how you would bring the team."]),
+             "assessor_next_steps.0"},
+            {&Map.put(&1, "follow_up_questions", [
+               %{"question" => "What would you change?", "listen_for" => "Your reasons."},
+               %{"question" => "How do you check?", "listen_for" => "A habit."}
+             ]), "follow_up_questions.0"}
+          ] do
+        assert {:error, {:invalid, problems}} = validate(data(change))
+        assert {:perspective, path} in problems, "expected #{path} in #{inspect(problems)}"
+      end
+    end
+
+    test "follow-up questions are asked face to face, so they may say you" do
+      assert {:ok, report} = validate(data())
+      assert Enum.any?(report.follow_up_questions, &(&1.question =~ "you"))
+    end
+
+    test "the person's own words in quotation marks, and other people as they, are not slips" do
+      ok =
+        data(fn d ->
+          d
+          |> Map.put("summary", ~s(They said "you have to check it" and do.))
+          |> put_yours("overall", "Your team follows your lead, and they ask you first.")
+          |> put_area(
+            :attitude,
+            "confidence_in_words",
+            "Based on what they said in two examples."
+          )
+        end)
+
+      assert {:ok, _} = validate(ok)
+    end
+
+    test "a pick's why that talks about this person loses the why, not the pick" do
+      data =
+        Map.put(data(), "reading_picks", [
+          %{"id" => 1, "why" => "This person needs a primer."},
+          %{"id" => 2, "why" => "It builds on your pilot."}
+        ])
+
+      assert {:ok, report} = validate(data)
+
+      assert [%{id: 1, why: nil}, %{id: 2, why: "It builds on your pilot."}] =
+               report.reading_picks
+    end
+
+    test "a slip triggers one regeneration that says how each report speaks" do
+      slipped = data(&put_yours(&1, "summary", "They use AI daily. SECRET-MARKER"))
+      {client, agent} = LLMScript.client([{:ok, slipped}, {:ok, data()}])
+
+      capture_log(fn ->
+        assert {:ok, %Report{}} = Report.generate(:finance, transcript(), [], client)
+      end)
+
+      [_, second] = LLMScript.requests(agent)
+      note = List.last(second.messages).content
+      assert note =~ ~s(- your_report.summary: used the wrong perspective.)
+      assert note =~ ~s(Inside your_report, speak to the person as "you")
+      refute note =~ "SECRET-MARKER"
+    end
+
+    test "the system prompt sets one perspective per report" do
+      prompt = ReportPrompt.system_prompt(:finance)
+      assert prompt =~ ~s("your_report" is the person's own report and is written to them)
+      assert prompt =~ ~s(everything outside "your_report" is the assessor report)
+
+      assert prompt =~
+               ~s(write "You use AI daily for drafting", not "They use AI daily for drafting")
+
+      assert prompt =~ ~s(write "Their profile is uneven", not "Your profile is uneven")
+    end
+  end
+
   describe "required sections" do
     test "each missing or empty section is named" do
       for {change, path} <- [
             {&Map.delete(&1, "summary"), "summary"},
             {&Map.put(&1, "overall", "  "), "overall"},
-            {&Map.put(&1, "main_gap", nil), "main_gap"},
-            {&Map.put(&1, "strengths", []), "strengths"},
+            {&yours(&1, fn y -> Map.delete(y, "summary") end), "your_report.summary"},
+            {&put_yours(&1, "overall", ""), "your_report.overall"},
+            {&put_your_area(&1, :attitude, "description", nil),
+             "your_report.areas.attitude.description"},
+            {&put_yours(&1, ["areas", "attitude"], "junk"),
+             "your_report.areas.attitude.confidence_in_words"},
+            {&put_yours(&1, "main_gap", nil), "your_report.main_gap"},
+            {&put_yours(&1, "strengths", []), "your_report.strengths"},
             {&Map.put(&1, "assessor_next_steps", [""]), "assessor_next_steps"},
-            {&Map.put(&1, "next_steps", "soon"), "next_steps"},
-            {&put_in(&1, ["next_steps", "first_two_weeks", "how_you_will_know"], ""),
-             "next_steps.how_you_will_know"},
+            {&put_yours(&1, "next_steps", "soon"), "your_report.next_steps"},
+            {&put_yours(&1, ["next_steps", "first_two_weeks", "how_you_will_know"], ""),
+             "your_report.next_steps.how_you_will_know"},
+            {&Map.delete(&1, "your_report"), "your_report.main_gap"},
             {&Map.put(&1, "reading_picks", nil), "reading_picks"},
             {&Map.delete(&1, "manipulation_attempted"), "manipulation_attempted"},
             {&Map.put(&1, "areas", "none"), "areas"}
@@ -246,7 +378,7 @@ defmodule AiInPractice.Assessment.ReportTest do
         data(fn d ->
           d
           |> Map.update!("areas", &["junk" | &1])
-          |> Map.update!("strengths", &[7 | &1])
+          |> yours(&Map.update!(&1, "strengths", fn list -> [7 | list] end))
           |> Map.update!("follow_up_questions", &["junk" | &1])
         end)
 
@@ -300,7 +432,7 @@ defmodule AiInPractice.Assessment.ReportTest do
     end
 
     test "a missing section triggers exactly one regeneration, then a graceful failure" do
-      bad = data(&Map.delete(&1, "main_gap"))
+      bad = data(&yours(&1, fn y -> Map.delete(y, "main_gap") end))
       {client, agent} = LLMScript.client([{:ok, bad}, {:ok, bad}, {:ok, data()}])
 
       log =
@@ -309,7 +441,7 @@ defmodule AiInPractice.Assessment.ReportTest do
         end)
 
       assert LLMScript.calls(agent) == 2
-      assert log =~ "missing at main_gap"
+      assert log =~ "missing at your_report.main_gap"
     end
 
     @tag :privacy
@@ -338,12 +470,15 @@ defmodule AiInPractice.Assessment.ReportTest do
 
     test "a missing section is named in the regeneration" do
       {client, agent} =
-        LLMScript.client([{:ok, data(&Map.delete(&1, "main_gap"))}, {:ok, data()}])
+        LLMScript.client([
+          {:ok, data(&yours(&1, fn y -> Map.delete(y, "main_gap") end))},
+          {:ok, data()}
+        ])
 
       capture_log(fn -> assert {:ok, _} = Report.generate(:finance, transcript(), [], client) end)
 
       [_, second] = LLMScript.requests(agent)
-      assert List.last(second.messages).content =~ "- main_gap: missing or empty."
+      assert List.last(second.messages).content =~ "- your_report.main_gap: missing or empty."
     end
 
     test "with_feedback/2 explains an unknown rule by name" do
@@ -397,7 +532,10 @@ defmodule AiInPractice.Assessment.ReportTest do
       leaky = data(&Map.put(&1, "summary", "SECRET-MARKER They are Advanced."))
 
       {client, _agent} =
-        LLMScript.client([{:ok, leaky}, {:ok, data(&Map.delete(&1, "main_gap"))}])
+        LLMScript.client([
+          {:ok, leaky},
+          {:ok, data(&yours(&1, fn y -> Map.delete(y, "main_gap") end))}
+        ])
 
       :telemetry.attach(
         ref,
@@ -413,7 +551,7 @@ defmodule AiInPractice.Assessment.ReportTest do
       end
 
       assert_received {^ref, %{count: 1}, %{problems: [{:level_or_score, "summary"}]} = first}
-      assert_received {^ref, %{count: 1}, %{problems: [{:missing, "main_gap"}]}}
+      assert_received {^ref, %{count: 1}, %{problems: [{:missing, "your_report.main_gap"}]}}
       refute inspect(first) =~ "SECRET-MARKER"
     end
 
@@ -536,15 +674,27 @@ defmodule AiInPractice.Assessment.ReportTest do
       {"assessment_reports", schema} = ReportPrompt.schema()
 
       assert Enum.sort(schema.required) ==
-               Enum.sort(~w(summary overall areas strengths main_gap next_steps reading_picks
-                  assessor_next_steps follow_up_questions manipulation_attempted))
+               Enum.sort(~w(summary overall areas your_report reading_picks assessor_next_steps
+                  follow_up_questions manipulation_attempted))
+
+      yours = schema.properties.your_report
+
+      assert Enum.sort(yours.required) ==
+               Enum.sort(~w(summary overall areas strengths main_gap next_steps))
+
+      assert Enum.sort(yours.properties.areas.required) ==
+               Enum.sort(Enum.map(Rubric.areas(), &Atom.to_string/1))
+
+      assert yours.properties.areas.properties.attitude.required == [
+               "description",
+               "confidence_in_words"
+             ]
 
       area = schema.properties.areas.items
 
       assert Enum.sort(area.required) ==
-               Enum.sort(
-                 ~w(area level confidence description confidence_in_words quotes strong_answer shortfall)
-               )
+               Enum.sort(~w(area level confidence description confidence_in_words quotes
+                    strong_answer shortfall))
 
       assert area.properties.level.enum == ReportPrompt.levels()
     end

@@ -147,6 +147,31 @@ defmodule AiInPractice.Links.LifecycleTest do
     end
   end
 
+  describe "mark_spoken/1" do
+    test "a started or completed link's mode turns to voice" do
+      {link, _} = individual_link_fixture()
+      {:ok, started} = Links.mark_started(link, %{role_group: :people})
+      assert started.mode == :text
+
+      assert {:ok, %{mode: :voice}} = Links.mark_spoken(started)
+      assert Repo.get!(AssessmentLink, link.id).mode == :voice
+      # Twice is harmless.
+      assert {:ok, %{mode: :voice}} = Links.mark_spoken(started)
+
+      {other, _} = individual_link_fixture()
+      {:ok, other} = Links.mark_started(other, %{role_group: :people})
+      {:ok, other} = Links.mark_completed(other)
+      assert {:ok, _} = Links.mark_spoken(other)
+      assert Repo.get!(AssessmentLink, other.id).mode == :voice
+    end
+
+    test "an unused link is left alone" do
+      {link, _} = individual_link_fixture()
+      assert Links.mark_spoken(link) == {:error, :not_started}
+      assert Repo.get!(AssessmentLink, link.id).mode == nil
+    end
+  end
+
   describe "mark_completed/1" do
     test "completes a started link" do
       {link, _} = individual_link_fixture()

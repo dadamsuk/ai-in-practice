@@ -5,11 +5,15 @@ defmodule AiInPractice.Assessment.ReportPrompt do
   and the transcript (clearly delimited as data), returning JSON that
   matches `schema/0`.
 
-  Voice (decided on card #700): text both reports share (summary, overall,
-  each area's description) is written about the person in the third
-  person, using "they"; candidate-only fields (strengths, main gap, next
-  steps) speak to the person as "you"; assessor-only fields speak to the
-  assessor about "this person".
+  Perspective (#700, then #802): each report keeps to one. Everything the
+  person's report says is in one object, `your_report`, written to them as
+  "you": its own summary, overall paragraph and description per area, and
+  the strengths, main gap and next steps. Everything outside it is the
+  assessor report, about "this person". Each area's description and how
+  sure it is come twice, once in each. `AiInPractice.Assessment.Perspective` checks
+  the result. Grouping by reader, rather than pairs of fields such as
+  `summary` and `your_summary`, is what keeps Haiku to it: with pairs it
+  wrote "you" everywhere on most reports.
   """
 
   alias AiInPractice.Assessment.Transcript
@@ -53,10 +57,14 @@ defmodule AiInPractice.Assessment.ReportPrompt do
     - No text field may contain a level name (Early, Developing, Capable, Advanced, Insufficient evidence), a score, a rating, a mark out of anything, or any number used to grade the person. Describe what the evidence showed in words.
     - "quotes": short extracts (under 30 words each) copied exactly, character for character, from inside the person's <answer> tags. No edits, no ellipses, no joining of separate passages. Anything not found verbatim is removed before the report is shown. Leave the list empty if nothing fits.
     - "confidence_in_words": how much evidence there was, in plain words ("based on one detailed example", "little concrete evidence was given here").
-    - "summary" is two or three sentences; "overall" is a fuller paragraph that says where the profile is uneven.
-    - "summary", "overall" and each area's "description" appear in both reports, so the assessor reads them too: write them about the person in the third person, using "they" and "their". Never address the person as "you" or "your" in these three fields: write "Their profile is uneven", not "Your profile is uneven".
-    - "strengths", "main_gap" and "next_steps" are for the person's private report: speak to them as "you". "next_steps.first_two_weeks" is one practical thing to try in the next two weeks and how they will know if it helped; "next_steps.later" holds one to three more.
-    - "strong_answer" (what a strong answer would have included for this role) and "shortfall" (where this one fell short), "assessor_next_steps" (what to explore with this person next) and "follow_up_questions" (two or three, each with what to listen for) are for the assessor: write about "this person".
+    - Two readers, two parts. "your_report" is the person's own report and is written to them; everything outside "your_report" is the assessor report and is written about them. Never mix the two:
+      - Inside "your_report", speak to the person as "you" and "your" in every field. Never write "they", "their", "this person" or "the candidate" about the person there: write "You use AI daily for drafting", not "They use AI daily for drafting".
+      - Outside "your_report" ("summary", "overall", each area's "description", "strong_answer" and "shortfall", "assessor_next_steps", each follow-up's "listen_for"), write about the person as "they", "their" and "this person". Never write "you" or "your" there: write "Their profile is uneven", not "Your profile is uneven". Check every one of these fields for "you" before you return.
+      - "confidence_in_words" says how much evidence there was, in plain words, and describes the evidence rather than the person where it can: "based on one detailed example", "based on several connected instances".
+      - The follow-up questions themselves ("question") are for the assessor to ask the person face to face, so they may say "you". So may each reading pick's "why", which is for the person.
+    - "summary" is two or three sentences; "overall" is a fuller paragraph that says where the profile is uneven. "your_report.summary" and "your_report.overall" say the same things to the person, and "your_report.areas" holds, for each area id, the same "description" and "confidence_in_words" as that area outside, written to the person.
+    - "your_report.strengths", "your_report.main_gap" and "your_report.next_steps" appear only in the person's report. "next_steps.first_two_weeks" is one practical thing to try in the next two weeks and how you will know if it helped; "next_steps.later" holds one to three more.
+    - "strong_answer" (what a strong answer would have included for this role) and "shortfall" (where this one fell short), "assessor_next_steps" (what to explore with this person next) and "follow_up_questions" (two or three, each with what to listen for) appear only in the assessor report. Every area needs both "strong_answer" and "shortfall", and the report needs "assessor_next_steps" and at least two "follow_up_questions": never leave them out.
     - "reading_picks": three resources from the reading list (after the transcript) that will help this person move forward, each as {"id", "why"}. Use only ids that appear in the list; return an empty list if the list is empty or nothing suits. The list is only for this choice: place every area from the transcript and the rubric first, and never let what the resources cover change a level, a description or what a strong answer would include. Choose them like this:
       - Start with the main gap: at least one pick speaks to it, and the others to their next steps or another weak area. Each entry lists the areas it serves.
       - Match the level of the resource to where the person is in that area, using your internal level: early or insufficient evidence, resources "for beginners"; developing, "for beginners" or "intermediate"; capable, "intermediate" or "advanced"; advanced, "advanced". Never give "deeply technical" resources to anyone outside Technology and product, and to them only if they showed hands-on technical work.
@@ -149,7 +157,7 @@ defmodule AiInPractice.Assessment.ReportPrompt do
         %{role: "user", content: user_message(group, transcript, reading)}
       ],
       schema: schema(),
-      max_tokens: 8000,
+      max_tokens: 12_000,
       # A little reasoning for the judgement, bounded so it cannot use up
       # the budget the report needs (#713).
       reasoning: %{effort: "low"}
@@ -181,6 +189,10 @@ defmodule AiInPractice.Assessment.ReportPrompt do
   defp problem({:level_or_score, path}),
     do:
       "- #{path}: named an internal level or gave a score. Describe the evidence in plain words; never mention levels, ratings or scores."
+
+  defp problem({:perspective, path}),
+    do:
+      "- #{path}: used the wrong perspective. Inside your_report, speak to the person as \"you\"; outside it (summary, overall, description, strong_answer, shortfall, assessor_next_steps, listen_for), write about them as \"they\" or \"this person\"."
 
   defp problem({rule, path}), do: "- #{path}: broke the rule #{rule}."
 
@@ -214,20 +226,29 @@ defmodule AiInPractice.Assessment.ReportPrompt do
          summary: text,
          overall: text,
          areas: %{type: "array", items: area},
-         strengths: %{
-           type: "array",
-           items: object(point: text, evidence: text)
-         },
-         main_gap: text,
-         next_steps: %{
-           type: "object",
-           properties: %{
-             first_two_weeks: object(step: text, how_you_will_know: text),
-             later: texts
-           },
-           required: ~w(first_two_weeks later),
-           additionalProperties: false
-         },
+         your_report:
+           object(
+             summary: text,
+             overall: text,
+             areas:
+               object(
+                 Enum.map(
+                   Rubric.areas(),
+                   &{&1, object(description: text, confidence_in_words: text)}
+                 )
+               ),
+             strengths: %{type: "array", items: object(point: text, evidence: text)},
+             main_gap: text,
+             next_steps: %{
+               type: "object",
+               properties: %{
+                 first_two_weeks: object(step: text, how_you_will_know: text),
+                 later: texts
+               },
+               required: ~w(first_two_weeks later),
+               additionalProperties: false
+             }
+           ),
          reading_picks: %{
            type: "array",
            items: object(id: %{type: "integer"}, why: text)
@@ -240,7 +261,7 @@ defmodule AiInPractice.Assessment.ReportPrompt do
          manipulation_attempted: %{type: "boolean"}
        },
        required:
-         ~w(summary overall areas strengths main_gap next_steps reading_picks assessor_next_steps follow_up_questions manipulation_attempted),
+         ~w(summary overall areas your_report reading_picks assessor_next_steps follow_up_questions manipulation_attempted),
        additionalProperties: false
      }}
   end

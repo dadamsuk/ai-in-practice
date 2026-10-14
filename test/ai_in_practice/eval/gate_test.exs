@@ -161,7 +161,9 @@ defmodule AiInPractice.Eval.GateTest do
     assert {:ok, _} = Gate.check(Map.put(s, "voice", voice(0)), b)
 
     assert {:error, [failure]} = Gate.check(Map.put(s, "voice", voice(2)), b)
-    assert failure == ~s(2 of 10 reports spoke to the person as "you" in shared text \(overall\))
+
+    assert failure ==
+             ~s(2 of 10 reports spoke to the person as "you" in the assessor's text \(overall\))
 
     assert {:ok, _} =
              Gate.check(
@@ -172,6 +174,32 @@ defmodule AiInPractice.Eval.GateTest do
 
   defp voice(n),
     do: %{"reports" => 10, "second_person" => n, "fields" => if(n > 0, do: ["overall"], else: [])}
+
+  test ~s(a report saying "they" in the person's own text fails; a summary without the count passes) do
+    s = summary([persona("a", ["capable"])])
+    b = baseline(%{"a" => 2.0})
+
+    v = %{
+      "reports" => 10,
+      "second_person" => 0,
+      "third_person" => 1,
+      "fields" => ["your_overall"]
+    }
+
+    assert {:error, [failure]} = Gate.check(Map.put(s, "voice", v), b)
+
+    assert failure ==
+             ~s(1 of 10 reports talked about the person as "they" in their own text \(your_overall\))
+
+    assert {:ok, _} = Gate.check(Map.put(s, "voice", %{v | "third_person" => 0}), b)
+    assert {:ok, _} = Gate.check(Map.put(s, "voice", Map.delete(v, "third_person")), b)
+
+    assert {:ok, _} =
+             Gate.check(
+               Map.put(s, "voice", v),
+               baseline(%{"a" => 2.0}, %{"max_third_person" => 1})
+             )
+  end
 
   test "a gate persona missing from the run fails; extra personas are ignored" do
     s = summary([persona("a", ["capable"]), persona("extra", ["early"])])

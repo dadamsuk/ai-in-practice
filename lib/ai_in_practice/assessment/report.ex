@@ -13,7 +13,10 @@ defmodule AiInPractice.Assessment.Report do
       stays);
     * a level label or a numeric score in any rendered text field rejects
       the output;
-    * a missing or empty section rejects the output.
+    * a missing or empty section rejects the output;
+    * text that breaks its report's perspective (`AiInPractice.Assessment.Perspective`:
+      the person's report says "you", the assessor report "they")
+      rejects the output, and a pick's "why" that does is dropped.
 
   Rejected output is regenerated once, with the rules it broke and where
   (never its text) added to the request; a second rejection is
@@ -30,7 +33,7 @@ defmodule AiInPractice.Assessment.Report do
 
   require Logger
 
-  alias AiInPractice.Assessment.{ReportPrompt, Transcript}
+  alias AiInPractice.Assessment.{Perspective, ReportPrompt, Transcript}
   alias AiInPractice.LLM
   alias AiInPractice.Rubric
 
@@ -38,6 +41,8 @@ defmodule AiInPractice.Assessment.Report do
     :role_group,
     :summary,
     :overall,
+    :your_summary,
+    :your_overall,
     :areas,
     :strengths,
     :main_gap,
@@ -117,23 +122,92 @@ defmodule AiInPractice.Assessment.Report do
   @spec validate(map() | nil, AiInPractice.RoleGroups.t(), Transcript.t(), [integer()]) ::
           {:ok, t()} | {:error, {:invalid, [{atom(), String.t()}]}}
   def validate(data, group, transcript, reading_ids) when is_map(data) do
+    data = flatten(data)
+
     case missing(data) do
       [] ->
         answers = transcript |> Transcript.answers() |> Enum.map(&normalise/1)
         report = build(data, group, answers, reading_ids, transcript)
 
-        case leaks(report) do
+        problems =
+          Enum.map(leaks(report), &{:level_or_score, schema_path(&1)}) ++
+            Enum.map(off_perspective(report), &{:perspective, schema_path(&1)})
+
+        case problems do
           [] -> {:ok, report}
-          paths -> {:error, {:invalid, Enum.map(paths, &{:level_or_score, &1})}}
+          problems -> {:error, {:invalid, problems}}
         end
 
       paths ->
-        {:error, {:invalid, Enum.map(paths, &{:missing, &1})}}
+        {:error, {:invalid, Enum.map(paths, &{:missing, schema_path(&1)})}}
     end
   end
 
   def validate(_data, _group, _transcript, _reading_ids),
     do: {:error, {:invalid, [missing: "report"]}}
+
+  ## The person's report
+
+  # Everything that speaks to the person comes in one object, "your_report"
+  # (#802): its summary, overall paragraph, a description per area, the
+  # strengths, the main gap and the next steps. Here it is laid flat, beside
+  # the assessor's text, as the report keeps it.
+  @yours ~w(strengths main_gap next_steps)
+
+  defp flatten(data) do
+    yours = if is_map(data["your_report"]), do: data["your_report"], else: %{}
+    descriptions = if is_map(yours["areas"]), do: yours["areas"], else: %{}
+
+    areas =
+      case data["areas"] do
+        areas when is_list(areas) -> Enum.map(areas, &with_yours(&1, descriptions))
+        other -> other
+      end
+
+    data
+    |> Map.drop(["your_report" | @yours])
+    |> Map.merge(Map.take(yours, @yours))
+    |> Map.merge(%{
+      "your_summary" => yours["summary"],
+      "your_overall" => yours["overall"],
+      "areas" => areas
+    })
+  end
+
+  # An area with the person's version of its description and confidence.
+  defp with_yours(%{} = area, descriptions) do
+    yours =
+      case descriptions[area["area"]] do
+        %{} = yours -> yours
+        _ -> %{}
+      end
+
+    Map.merge(area, %{
+      "your_description" => yours["description"],
+      "your_confidence_in_words" => yours["confidence_in_words"]
+    })
+  end
+
+  defp with_yours(area, _descriptions), do: area
+
+  # A path as the schema spells it, for the regeneration note and the logs.
+  @doc false
+  def schema_path("your_summary"), do: "your_report.summary"
+  def schema_path("your_overall"), do: "your_report.overall"
+
+  def schema_path("areas." <> rest) do
+    case String.split(rest, ".") do
+      [area, "your_description"] -> "your_report.areas.#{area}.description"
+      [area, "your_confidence_in_words"] -> "your_report.areas.#{area}.confidence_in_words"
+      _ -> "areas." <> rest
+    end
+  end
+
+  def schema_path(path) do
+    if Enum.any?(@yours, &(path == &1 or String.starts_with?(path, &1 <> "."))),
+      do: "your_report." <> path,
+      else: path
+  end
 
   ## Required sections
 
@@ -141,6 +215,8 @@ defmodule AiInPractice.Assessment.Report do
     [
       text?(data, "summary"),
       text?(data, "overall"),
+      text?(data, "your_summary"),
+      text?(data, "your_overall"),
       text?(data, "main_gap"),
       areas_missing(data["areas"]),
       list_of?(data, "strengths", 1, &(text?(&1, "point") == [] and text?(&1, "evidence") == [])),
@@ -164,7 +240,9 @@ defmodule AiInPractice.Assessment.Report do
   defp pick(_), do: []
 
   defp why(text) do
-    if nonblank?(text) and not leak?(text), do: String.trim(text), else: nil
+    if nonblank?(text) and not leak?(text) and Perspective.keeps?(text, :you),
+      do: String.trim(text),
+      else: nil
   end
 
   defp text?(map, key) when is_map(map), do: if(nonblank?(map[key]), do: [], else: [key])
@@ -199,7 +277,10 @@ defmodule AiInPractice.Assessment.Report do
 
   defp area_missing(id, area) do
     texts =
-      Enum.flat_map(~w(description confidence_in_words strong_answer shortfall), &text?(area, &1))
+      Enum.flat_map(
+        ~w(description your_description confidence_in_words your_confidence_in_words strong_answer shortfall),
+        &text?(area, &1)
+      )
 
     checks = [
       {"level", area["level"] in Map.keys(@level_atoms)},
@@ -224,7 +305,9 @@ defmodule AiInPractice.Assessment.Report do
           level: Map.fetch!(@level_atoms, area["level"]),
           confidence: Map.fetch!(@confidence_atoms, area["confidence"]),
           description: area["description"],
+          your_description: area["your_description"],
           confidence_in_words: area["confidence_in_words"],
+          your_confidence_in_words: area["your_confidence_in_words"],
           quotes: Enum.filter(quotes, &verbatim?(&1, answers)),
           strong_answer: area["strong_answer"],
           shortfall: area["shortfall"],
@@ -247,6 +330,8 @@ defmodule AiInPractice.Assessment.Report do
       role_group: group,
       summary: data["summary"],
       overall: data["overall"],
+      your_summary: data["your_summary"],
+      your_overall: data["your_overall"],
       areas: Enum.map(areas, &Map.delete(&1, :offered_quotes)),
       strengths:
         for(
@@ -326,28 +411,58 @@ defmodule AiInPractice.Assessment.Report do
     |> Enum.map(&elem(&1, 0))
   end
 
-  defp rendered_text(r) do
+  defp rendered_text(r),
+    do: Enum.map(rendered(r), fn {path, text, _perspective} -> {path, text} end)
+
+  @doc """
+  The paths of rendered text fields that break their report's perspective
+  (`AiInPractice.Assessment.Perspective`). The follow-up questions are
+  for the assessor to ask the person, so they may say "you".
+  """
+  @spec off_perspective(t()) :: [String.t()]
+  def off_perspective(%__MODULE__{} = report) do
+    for {path, text, perspective} <- rendered(report),
+        perspective != :any,
+        not Perspective.keeps?(text, perspective),
+        do: path
+  end
+
+  # Every rendered text field: its path, its text and its perspective.
+  defp rendered(r) do
     [
-      {"summary", r.summary},
-      {"overall", r.overall},
-      {"main_gap", r.main_gap},
-      {"next_steps.first_two_weeks.step", r.next_steps.first_two_weeks.step},
+      {"summary", r.summary, :they},
+      {"overall", r.overall, :they},
+      {"your_summary", r.your_summary, :you},
+      {"your_overall", r.your_overall, :you},
+      {"main_gap", r.main_gap, :you},
+      {"next_steps.first_two_weeks.step", r.next_steps.first_two_weeks.step, :you},
       {"next_steps.first_two_weeks.how_you_will_know",
-       r.next_steps.first_two_weeks.how_you_will_know}
+       r.next_steps.first_two_weeks.how_you_will_know, :you}
     ] ++
       for(
         a <- r.areas,
-        field <- ~w(description confidence_in_words strong_answer shortfall)a,
-        do: {"areas.#{a.area}.#{field}", Map.fetch!(a, field)}
+        {field, perspective} <- [
+          description: :they,
+          your_description: :you,
+          confidence_in_words: :they,
+          your_confidence_in_words: :you,
+          strong_answer: :they,
+          shortfall: :they
+        ],
+        do: {"areas.#{a.area}.#{field}", Map.fetch!(a, field), perspective}
       ) ++
-      indexed("strengths", r.strengths, fn s -> [s.point, s.evidence] end) ++
-      indexed("next_steps.later", r.next_steps.later, &[&1]) ++
-      indexed("assessor_next_steps", r.assessor_next_steps, &[&1]) ++
-      indexed("follow_up_questions", r.follow_up_questions, fn q -> [q.question, q.listen_for] end)
+      indexed("strengths", r.strengths, fn s -> [{s.point, :you}, {s.evidence, :you}] end) ++
+      indexed("next_steps.later", r.next_steps.later, &[{&1, :you}]) ++
+      indexed("assessor_next_steps", r.assessor_next_steps, &[{&1, :they}]) ++
+      indexed("follow_up_questions", r.follow_up_questions, fn q ->
+        [{q.question, :any}, {q.listen_for, :they}]
+      end)
   end
 
   defp indexed(prefix, items, fun) do
-    for {item, i} <- Enum.with_index(items), text <- fun.(item), do: {"#{prefix}.#{i}", text}
+    for {item, i} <- Enum.with_index(items),
+        {text, perspective} <- fun.(item),
+        do: {"#{prefix}.#{i}", text, perspective}
   end
 
   @doc false

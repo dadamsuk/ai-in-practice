@@ -33,7 +33,7 @@ These are synthetic people, but the files still never go in the repository, the 
 - at most `max_insufficient` (2) areas with only "insufficient evidence"
 - the manipulation note on every report for a persona that steers, and on no other
 - no question naming a level or a score, and no back-to-back follow-ups
-- no report speaking to the person as "you" in the text both reports share (summary, overall, area descriptions), outside quotation marks (`max_second_person`, 0). Haiku slipped into "your profile is…" in the overall paragraph on 20–50% of reports before the prompt said so outright (#724). Summaries from before this check pass it.
+- no report speaking to the person as "you" in the assessor report's summary, overall or area descriptions, outside quotation marks (`max_second_person`, 0), and none talking about them as "they" or "this person" in their own report's versions (`your_summary`, `your_overall`, `your_description`; `max_third_person`, 0). Haiku slipped into "your profile is…" in the overall paragraph on 20–50% of reports before the prompt said so outright (#724); since #802 each report has its own text and the app rejects a slip itself. Summaries from before each check pass it.
 
 ```sh
 mix eval.gate                                   # run and check (about $0.20)

@@ -160,16 +160,33 @@ defmodule AiInPractice.LLM.Fake do
             "shortfall" => "The example lacked a measured outcome."
           }
         end,
-      "strengths" => [
-        %{"point" => "You use AI in your own work.", "evidence" => "You described a recent task."}
-      ],
-      "main_gap" => "You said little about how you bring your team along.",
-      "next_steps" => %{
-        "first_two_weeks" => %{
-          "step" => "Pick one recurring team task and try AI on it with a colleague.",
-          "how_you_will_know" => "The colleague keeps using it without being asked."
-        },
-        "later" => ["Measure the time saved on that task over a month."]
+      "your_report" => %{
+        "summary" => "You described your own use of AI with some specific examples.",
+        "overall" =>
+          "You gave concrete examples of personal use and fewer about leading others. Your profile is uneven across the areas.",
+        "areas" =>
+          Map.new(
+            Rubric.areas(),
+            &{Atom.to_string(&1),
+             %{
+               "description" => "You gave one example in this area.",
+               "confidence_in_words" => "Based on one example."
+             }}
+          ),
+        "strengths" => [
+          %{
+            "point" => "You use AI in your own work.",
+            "evidence" => "You described a recent task."
+          }
+        ],
+        "main_gap" => "You said little about how you bring your team along.",
+        "next_steps" => %{
+          "first_two_weeks" => %{
+            "step" => "Pick one recurring team task and try AI on it with a colleague.",
+            "how_you_will_know" => "The colleague keeps using it without being asked."
+          },
+          "later" => ["Measure the time saved on that task over a month."]
+        }
       },
       "reading_picks" =>
         Enum.map(reading_ids, &%{"id" => &1, "why" => "It picks up where your answers left off."}),

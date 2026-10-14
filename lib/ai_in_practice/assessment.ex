@@ -25,5 +25,6 @@ defmodule AiInPractice.Assessment do
   defdelegate report(id), to: Session
   defdelegate download(id), to: Session
   defdelegate attach(id, check, owner \\ self()), to: Session
+  defdelegate put_meta(id, changes), to: Session
   defdelegate stop(id), to: Session
 end

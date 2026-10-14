@@ -7,7 +7,7 @@
  * rounded corners, shadows, gradients, chips, icons, imagery or transitions.
  * Mono is never capitals. The accent marks the one thing on a screen that is
  * the point, at most twice per screen, never on thin rules or small type.
- * Light theme only.
+ * Light theme only, on a cream ground (white in print).
  *
  * test/ai_in_practice_web/design_system_test.exs checks these rules.
  */
@@ -61,12 +61,13 @@
 }
 
 :root {
-  --ground: #ffffff;
+  --ground: #f8f4ea;
   --ink: #111111;
   --ink-quiet: #555555;
   --hair: #8c8c8c;
-  --band: #e2e2e2;
+  --band: #e4dfd2;
   --accent: #8a2a1e;
+  --button: #3d2b1f;
 
   --serif: "Source Serif 4", Georgia, serif;
   --mono: "IBM Plex Mono", Menlo, Consolas, monospace;
@@ -81,6 +82,7 @@
 
 @media print {
   :root {
+    --ground: #ffffff;
     --hair: #c4c4c4;
   }
 }
@@ -259,15 +261,18 @@ hr.rule {
   font-weight: 600;
   line-height: calc(var(--unit) * 2);
   padding: calc(var(--unit) / 2) calc(var(--unit) * 1.5);
-  color: var(--ink);
-  background: var(--ground);
-  border: 2px solid var(--ink);
+  color: var(--ground);
+  background: var(--button);
+  border: 2px solid var(--button);
   text-decoration: none;
   cursor: pointer;
 }
 
+/* Buttons are dark brown with light text; the primary one takes the
+   accent instead. */
 .button:hover {
-  background: var(--band);
+  background: var(--ink);
+  border-color: var(--ink);
 }
 
 .button-primary {
@@ -362,9 +367,9 @@ input[type="file"]::file-selector-button {
   line-height: calc(var(--unit) * 2);
   padding: 0 var(--unit);
   margin-right: var(--unit);
-  color: var(--ink);
-  background: var(--ground);
-  border: 2px solid var(--ink);
+  color: var(--ground);
+  background: var(--button);
+  border: 2px solid var(--button);
   border-radius: 0;
   cursor: pointer;
 }
@@ -552,10 +557,10 @@ textarea {
   margin: calc(var(--unit) * 2) 0 calc(var(--unit) * 2);
 }
 
-/* Once an answer is sent, the question steps back until the next one
-   arrives. */
+/* Once an answer is sent, the question goes from the screen until the
+   next one arrives, but keeps its space so nothing below it moves. */
 .question-answered {
-  color: var(--ink-quiet);
+  visibility: hidden;
 }
 
 /* Focus is moved here so the question is read out; it is not a control,
@@ -591,7 +596,7 @@ textarea {
   background: var(--accent);
 }
 
-/* A quiet progress rule: five band segments, filled in ink. */
+/* A quiet progress rule: band segments, filled in ink. */
 .progress {
   display: flex;
   gap: calc(var(--unit) / 2);
@@ -609,26 +614,89 @@ textarea {
   background: var(--ink);
 }
 
-/* Reports on screen: each opens on a structure rule. */
+/* Reports on screen: each opens on a structure rule (#804). */
 .report {
   border-top: var(--rule);
-  margin-top: calc(var(--unit) * 3);
+  margin-top: calc(var(--unit) * 4);
   max-width: var(--measure);
 }
 
 .report-title {
+  font-size: 28px;
+  line-height: calc(var(--unit) * 3);
   margin-top: var(--unit);
 }
 
+/* Each section (Summary, The five areas, Next steps…) opens on a hairline
+   rule with room above it, so the report reads as parts. */
+.report-section {
+  font-size: 24px;
+  line-height: calc(var(--unit) * 3);
+  border-top: var(--hairline);
+  padding-top: var(--unit);
+  margin: calc(var(--unit) * 4) 0 var(--unit);
+}
+
+/* An area within a section: smaller than a section, with room above. */
+.report-area {
+  font-size: 20px;
+  line-height: calc(var(--unit) * 2);
+  margin: calc(var(--unit) * 3) 0 calc(var(--unit) / 2);
+}
+
+/* The summary's first paragraph is the point of the report. */
+.report-body > .report-section:first-of-type + p {
+  font-size: 22px;
+  line-height: calc(var(--unit) * 3);
+}
+
 .report blockquote {
-  margin: 0 0 var(--unit);
+  margin: var(--unit) 0;
   padding-left: var(--unit);
   border-left: var(--hairline);
   font-style: italic;
+  max-width: var(--measure);
 }
 
-.report .labelled .mono {
+/* A label and its text side by side, like a definition list; stacked on
+   a narrow screen. */
+.labelled {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: 0 calc(var(--unit) * 2);
+  align-items: baseline;
+  margin: 0 0 var(--unit);
+  max-width: var(--measure);
+}
+
+.labelled-label {
   line-height: calc(var(--unit) * 2);
+}
+
+.labelled p {
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .labelled {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The assessor report's standing statement: a structure rule on the left,
+   as for a notice. */
+.report .statement {
+  border-left: var(--rule);
+  padding-left: var(--unit);
+  margin: calc(var(--unit) * 2) 0;
+}
+
+.report ul {
+  padding-left: calc(var(--unit) * 2);
+}
+
+.report li {
+  margin-bottom: calc(var(--unit) / 2);
 }
 
 .report a {

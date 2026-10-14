@@ -19,9 +19,10 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   **Voice** (v2, PRD §7 step 2–3, §10). When a transcriber is configured
   and answers (`AiInPractice.Transcriber.available?/0`, checked once the
-  page connects), the start screen offers to begin with spoken answers.
-  The question screen then has record and stop controls (the `.Voice`
-  hook, MediaRecorder). Each recording is a LiveView upload kept in memory
+  page connects), the question screen has record and stop controls beside
+  the answer box (the `.Voice` hook, MediaRecorder). There is no choice to
+  make at the start: the person types, or presses Record. The first
+  recording used marks the session's answers as spoken. Each recording is a LiveView upload kept in memory
   (`AiInPracticeWeb.MemoryUploadWriter`), sent to the transcriber from a
   task and dropped. The text is put in the answer box for the person to
   correct, and only what they send is an answer. Typing stays available
@@ -166,7 +167,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
   def handle_event("begin", params, %{assigns: %{phase: :start}} = socket) do
     with {:ok, link} <- Links.begin_session(socket.assigns.token),
          {:ok, group} <- role_group(link, params) do
-      begin(socket, link, group, mode(socket, params))
+      begin(socket, link, group)
     else
       :choose_role ->
         {:noreply, assign(socket, role_error: "Choose the role group closest to yours.")}
@@ -273,16 +274,16 @@ defmodule AiInPracticeWeb.AssessmentLive do
   defp role_group(%{kind: :individual}, _params), do: :choose_role
   defp role_group(%{role_group: group}, _params), do: {:ok, group}
 
-  # Voice only if it was offered on this page.
-  defp mode(%{assigns: %{voice?: true}}, %{"mode" => "voice"}), do: :voice
-  defp mode(_socket, _params), do: :text
-
-  defp begin(socket, link, group, mode) do
+  # There is no choice of typing or speaking: everyone types, and when
+  # voice was offered on this page the record control sits beside the box
+  # (#801). `mode` turns to :voice once a recording is used.
+  defp begin(socket, link, group) do
     meta = %{
       link_id: link.id,
       link_kind: link.kind,
       role_group: group,
-      mode: mode,
+      mode: :text,
+      voice?: socket.assigns.voice?,
       quick: link.quick,
       date: Date.utc_today()
     }
@@ -300,6 +301,9 @@ defmodule AiInPracticeWeb.AssessmentLive do
     end
   end
 
+  defp opening_steps(meta),
+    do: meta |> Map.get(:quick, false) |> Assessment.limits() |> Session.progress_steps()
+
   defp hard_stop_minutes(meta) do
     meta
     |> Map.get(:quick, false)
@@ -308,7 +312,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
     |> div(60_000)
   end
 
-  defp allow_voice(%{assigns: %{meta: %{mode: :voice}}} = socket) do
+  defp allow_voice(%{assigns: %{meta: %{voice?: true}}} = socket) do
     allow_upload(socket, :audio,
       accept: :any,
       max_entries: 1,
@@ -356,6 +360,17 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   defp voice_failed(socket, error), do: assign(socket, voice: :idle, voice_error: error)
 
+  # The first recording used: the reports and the link's usage record now
+  # say the answers were spoken.
+  defp spoken(%{assigns: %{meta: %{mode: :voice}}} = socket), do: socket
+
+  defp spoken(socket) do
+    %{meta: meta, session_id: id, link: link} = socket.assigns
+    _ = Assessment.put_meta(id, %{mode: :voice})
+    _ = Links.mark_spoken(link)
+    assign(socket, meta: %{meta | mode: :voice})
+  end
+
   @impl true
   def handle_async(:voice_check, {:ok, available?}, socket),
     do: {:noreply, assign(socket, voice?: available? == true)}
@@ -369,6 +384,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
         {:noreply,
          socket
          |> assign(voice: :idle, voice_error: nil)
+         |> spoken()
          |> push_event("transcribed", %{text: text})}
 
       {:ok, {:error, class}} ->
@@ -590,62 +606,50 @@ defmodule AiInPracticeWeb.AssessmentLive do
     ~H"""
     <h1>A conversation about how you work with AI</h1>
     <p :if={!@link.quick} class="lede">
-      About 20 to 25 minutes of questions, answered in your own words. At the end you get two reports.
+      About 20 to 25 minutes of questions. At the end you get two reports.
     </p>
     <p :if={@link.quick} class="lede" id="quick">
-      A quick session, a trial run: three or four questions in about three minutes, answered in your own words. At the end you get two reports, marked as quick.
+      A quick trial run: three or four questions in about three minutes. At the end you get two reports, marked as quick.
     </p>
 
     <p :if={@link.kind == :candidate} id="sender">
       <strong>{@link.recruiter_link.firm_name}</strong>
-      sent you this link. They can see whether you have started and completed it. They see nothing you write unless you send them the assessor report yourself.
+      sent you this link. They can see whether you have started and finished, but nothing you write unless you send them a report.
     </p>
 
     <ul id="essentials">
       <li id="be-specific">
-        <strong>Be specific.</strong>
-        Give real examples and go into detail: what you did, which tools, and what happened. The more detail you give, the more useful your reports.
+        <strong>Be specific.</strong> Give real examples: what you did, which tools, what happened.
       </li>
       <li>You have one attempt. Closing or reloading this page ends it.</li>
-      <li>Nothing you write is kept once you close the page.</li>
+      <li id="nothing-stored">Nothing you write is stored on our servers.</li>
     </ul>
 
     <details id="more-about" class="more">
-      <summary>More details: what this is and how it works</summary>
-      <p>
-        A conversation starter. It makes no decision about you, and there are no scores. You get a private report with next steps, and an assessor report that you can read first and then choose whether to send on.
-      </p>
+      <summary>More details</summary>
       <ul id="before-you-begin">
-        <li :if={!@link.quick}>It takes about 20 to 25 minutes, and stops after 40 at most.</li>
-        <li :if={@link.quick}>It takes about three minutes, and stops after eight at most.</li>
-        <li>
-          You have one attempt. Closing or reloading this page ends the conversation, and the link cannot be opened again.
-        </li>
-        <li>You may leave out the names of clients and employers, and give figures as ranges.</li>
-        <li :if={!@voice?}>
-          Type your answers. Pasting is turned off, but your computer's dictation works.
-        </li>
+        <li>A conversation starter, not a decision about you. There are no scores.</li>
+        <li :if={!@link.quick}>It stops after 40 minutes at most.</li>
+        <li :if={@link.quick}>It stops after eight minutes at most.</li>
+        <li>You may leave out client and employer names, and give figures as ranges.</li>
+        <li :if={!@voice?}>Type your answers, or use your computer's dictation. Pasting is off.</li>
         <li :if={@voice?} id="voice-offered">
-          Type your answers, or speak them and correct the text before you send it. Pasting is turned off, but your computer's dictation works.
+          Type your answers, or press Record and speak them. Pasting is off.
         </li>
-        <li>You can finish early at any point, though your reports will be less accurate.</li>
+        <li>You can finish early, though your reports will be less accurate.</li>
       </ul>
-    </details>
-
-    <details id="more-handling" class="more">
-      <summary>More details: how your answers are handled</summary>
       <p id="data-handling">
-        Your answers and reports are held in this server's memory only while this page is open. They are never written to disk, to a database or to a log. On the way they pass through Cloudflare, which secures the connection to this site. To write the questions and the reports, your answers are sent through OpenRouter to the AI model's provider, with zero data retention. When you close this page, they are gone.
+        Your answers are held in this server's memory only while this page is open, and never written to disk, a database or a log. They pass through Cloudflare, and through OpenRouter to the AI model's provider, with zero data retention.
       </p>
       <p :if={@voice?} id="voice-handling">
-        If you choose to speak, each recording goes to DSC's own transcription service, is turned into text and is deleted at once. It is never stored. You see the text and can correct it before you send it, and you can type instead at any point. The questions are only ever shown on screen. Your reports say whether your answers were typed or spoken, and transcription slips never count against you.
+        Recordings go to DSC's own transcription service and are deleted once turned into text. You correct the text before you send it, and transcription slips never count against you.
       </p>
     </details>
 
     <p id="legal">
       The <.link href={~p"/privacy"} target="_blank" rel="noopener">privacy notice</.link>
       and <.link href={~p"/terms"} target="_blank" rel="noopener">terms</.link>
-      set out what is kept and why this is never an automated decision about you. Both open in a new tab.
+      open in a new tab.
     </p>
 
     <.form for={@role_form} id="begin-form" phx-submit="begin">
@@ -666,18 +670,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
           </:item>
         </.list>
       <% end %>
-      <%= if @voice? do %>
-        <div class="page-actions">
-          <.button variant="primary" id="begin" name="mode" value="text">
-            Begin, typing my answers
-          </.button>
-          <.button id="begin-voice" name="mode" value="voice">
-            Begin, speaking my answers
-          </.button>
-        </div>
-      <% else %>
-        <.button variant="primary" id="begin">Begin the conversation</.button>
-      <% end %>
+      <.button variant="primary" id="begin">Begin the conversation</.button>
     </.form>
     <p class="quiet">Your link is used once the first question appears.</p>
     """
@@ -685,14 +678,14 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   defp phase(%{phase: :opening} = assigns) do
     ~H"""
-    <.progress done={0} />
+    <.progress done={0} steps={opening_steps(@meta)} />
     <p class="lede" role="status" id="status">Your first question is being written.</p>
     """
   end
 
   defp phase(%{phase: phase} = assigns) when phase in [:question, :thinking] do
     ~H"""
-    <.progress done={@question.covered} />
+    <.progress done={@question.done} steps={@question.steps} />
     <h1
       id="question"
       class={["question", @phase == :thinking && "question-answered"]}
@@ -705,7 +698,7 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
     <%= if @phase == :question do %>
       <.voice
-        :if={@meta && @meta.mode == :voice && @uploads[:audio]}
+        :if={@meta && @meta[:voice?] && @uploads[:audio]}
         uploads={@uploads}
         voice={@voice}
         voice_error={@voice_error}
@@ -732,10 +725,10 @@ defmodule AiInPracticeWeb.AssessmentLive do
             <span :if={!@paste_note} id="be-specific-hint">
               Give a real example and go into detail: what you did, which tools, what happened.
             </span>
-            <span :if={!@paste_note && @meta.mode == :voice}>
-              Record, or type. Check the text and correct anything misheard before you send it.
+            <span :if={!@paste_note && @meta[:voice?]}>
+              Type, or press Record to speak. Check the text before you send it.
             </span>
-            <span :if={!@paste_note && @meta.mode != :voice}>
+            <span :if={!@paste_note && !@meta[:voice?]}>
               Type, or use your computer's dictation.
             </span>
             <span :if={@paste_note} id="paste-note" role="status">
@@ -933,10 +926,10 @@ defmodule AiInPracticeWeb.AssessmentLive do
 
   attr :id, :string, default: "progress"
   attr :label, :string, default: "progress through the conversation"
-  attr :steps, :integer, default: 5
+  attr :steps, :integer, required: true
   attr :done, :integer, required: true
 
-  # A quiet rule of segments, filled as things move on: the five areas of
+  # A quiet rule of segments, filled as things move on: the questions of
   # the conversation, or the time the reports are taking to write.
   defp progress(assigns) do
     ~H"""

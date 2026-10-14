@@ -37,7 +37,9 @@ defmodule AiInPractice.Assessment.SessionTest do
            number: 1,
            first?: true,
            kind: :main,
-           covered: 0
+           covered: 0,
+           done: 0,
+           steps: 14
          }}
       )
     end
@@ -114,6 +116,70 @@ defmodule AiInPractice.Assessment.SessionTest do
 
       assert List.last(first.messages).content =~
                "Main questions asked: 0 (aim for 10 to 14; do not close before 8 unless told to; never more than 14)."
+    end
+  end
+
+  describe "progress (#800)" do
+    test "one segment per main question at the top of the aim" do
+      assert Session.progress_steps(Session.limits()) == 14
+      assert Session.progress_steps(Session.limits(true)) == 4
+    end
+
+    test "a segment fills for each main question answered, whatever the coverage" do
+      limits = Session.limits()
+      assert Session.progress_done(0, 0, limits) == 0
+      assert Session.progress_done(1, 0, limits) == 1
+      assert Session.progress_done(9, 0, limits) == 9
+    end
+
+    test "coverage moves it further when it is ahead of the questions" do
+      limits = Session.limits()
+      # Two of five areas: 2 * 14 / 5, rounded down.
+      assert Session.progress_done(1, 2, limits) == 5
+      assert Session.progress_done(7, 2, limits) == 7
+    end
+
+    test "the last segment waits for the conversation to close" do
+      assert Session.progress_done(14, 0, Session.limits()) == 13
+      assert Session.progress_done(20, 5, Session.limits()) == 13
+      assert Session.progress_done(4, 5, Session.limits(true)) == 3
+    end
+
+    test "each question carries how far through it is; a follow-up does not move it" do
+      {id, _} =
+        start!([
+          LLMScript.turn("Q1"),
+          LLMScript.turn("Why?", [], kind: "follow_up"),
+          LLMScript.turn("Q2")
+        ])
+
+      assert_event(id, {:question, %{text: "Q1", done: 0, steps: 14}})
+      :ok = Assessment.answer(id, "One.")
+      assert_event(id, {:question, %{text: "Why?", done: 1}})
+      :ok = Assessment.answer(id, "Because.")
+      assert_event(id, {:question, %{text: "Q2", done: 1}})
+    end
+
+    test "a quick session has four segments" do
+      {id, _} = start!([LLMScript.turn("Q1")], quick: true)
+      assert_event(id, {:question, %{done: 0, steps: 4}})
+    end
+  end
+
+  describe "put_meta/2" do
+    test "merges into the meta the session hands back" do
+      {client, _} = LLMScript.client([LLMScript.turn("Q1")])
+
+      {:ok, id} =
+        Assessment.start(:finance, llm: client, reading: [], meta: %{mode: :text, link_id: 7})
+
+      assert_event(id, {:question, _})
+      assert :ok = Assessment.put_meta(id, %{mode: :voice})
+      assert {:ok, %{meta: %{mode: :voice, link_id: 7}}} = Assessment.attach(id, fn _ -> true end)
+    end
+
+    test "a session that has gone is not found" do
+      assert Assessment.put_meta("no-such-session", %{mode: :voice}) == {:error, :not_found}
     end
   end
 

@@ -81,6 +81,25 @@ defmodule AiInPractice.Assessment.ConversationPromptTest do
       assert prompt =~ "thin evidence is recorded, not chased"
     end
 
+    test "varies the form of its questions instead of a stock opening (#803)" do
+      prompt = ConversationPrompt.system_prompt(:finance)
+      assert prompt =~ "No two questions in a row open the same way"
+
+      for opening <- [
+            "Name a time",
+            "Tell me about a time",
+            "Describe a time",
+            "Give an example of"
+          ],
+          do: assert(prompt =~ ~s("#{opening}"))
+
+      assert prompt =~ "pick up a detail from their last answer"
+      assert prompt =~ "ask about the most recent occasion"
+      assert prompt =~ "ask about a surprise, a mistake, or something that did not work"
+      # Varied in form, still grounded in what really happened.
+      assert prompt =~ "Each one still asks about something real that they did, decided or saw."
+    end
+
     test "sets the conversation rules: one follow-up, no praise, no abstract governance, no 'interview'" do
       prompt = ConversationPrompt.system_prompt(:ceo_gm)
       assert prompt =~ "Ask one follow-up at most per main question"
