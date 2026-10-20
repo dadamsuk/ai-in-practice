@@ -48,7 +48,7 @@ jobs:
       # Synthetic personas' transcripts and reports: an artifact only, never committed.
       - name: Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eval-${{ github.sha }}
           path: ${{ runner.temp }}/eval
